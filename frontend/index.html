@@ -836,9 +836,17 @@
             Powers sector analysis, rotation heatmap, and universe selection.
           </p>
         </div>
-        <button class="nse-idx-sync-btn" id="nse-idx-sync-btn" onclick="syncNseIndices()">
-          <span>⬇</span> Sync All Indices
-        </button>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="nse-idx-sync-btn" id="nse-idx-sync-btn" onclick="syncNseIndices()">
+            <span>⬇</span> Sync All Indices
+          </button>
+          <button class="nse-idx-sync-btn" id="nse-idx-backfill-btn"
+            onclick="backfillMissingOhlcv()"
+            style="background:var(--accent2)"
+            title="Download 2-year OHLCV history for any constituent tickers missing data">
+            <span>📥</span> Backfill Missing OHLCV
+          </button>
+        </div>
       </div>
 
       <!-- Summary stats (shown after sync) -->
@@ -858,6 +866,10 @@
         <div class="nse-idx-stat">
           <span class="nse-idx-stat-val" id="nse-idx-thematic-count">0</span>
           <span class="nse-idx-stat-lbl">THEMATIC</span>
+        </div>
+        <div class="nse-idx-stat">
+          <span class="nse-idx-stat-val" id="nse-idx-coverage">—%</span>
+          <span class="nse-idx-stat-lbl">OHLCV COVERAGE</span>
         </div>
         <div class="nse-idx-stat">
           <span class="nse-idx-stat-val" id="nse-idx-last-sync-time">—</span>

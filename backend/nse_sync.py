@@ -38,11 +38,38 @@ def _load_nifty500_tickers():
     return tickers
 
 
-def _get_stale_tickers(days_threshold=5):
-    """Find NIFTY 500 tickers whose data is older than threshold days."""
-    tickers = _load_nifty500_tickers()
+def _get_all_universe_tickers() -> list:
+    """
+    Get the full ticker universe for EOD sync.
+    Priority:
+      1. All tickers from nse_index_constituents (after NSE index sync)
+      2. Fall back to NIFTY 500 CSV if index DB is empty
+    """
     if not DB_PATH.exists():
-        return tickers  # all are stale if no DB
+        return _load_nifty500_tickers()
+    try:
+        conn = sqlite3.connect(str(DB_PATH), timeout=10)
+        rows = conn.execute(
+            "SELECT DISTINCT ticker FROM nse_index_constituents ORDER BY ticker"
+        ).fetchall()
+        conn.close()
+        if rows:
+            tickers = [r[0] for r in rows]
+            logger.info(f"Universe: {len(tickers)} tickers from nse_index_constituents")
+            return tickers
+    except Exception as e:
+        logger.warning(f"Could not load index constituents: {e}")
+    # Fallback
+    tickers = _load_nifty500_tickers()
+    logger.info(f"Universe: {len(tickers)} tickers from NIFTY 500 CSV (fallback)")
+    return tickers
+
+
+def _get_stale_tickers(days_threshold=5):
+    """Find tickers (from full universe) whose data is older than threshold days."""
+    tickers = _get_all_universe_tickers()
+    if not DB_PATH.exists():
+        return [(t, None) for t in tickers]
 
     conn = sqlite3.connect(str(DB_PATH), timeout=30)
     cutoff = (datetime.now() - timedelta(days=days_threshold)).strftime('%Y-%m-%d')
@@ -57,7 +84,10 @@ def _get_stale_tickers(days_threshold=5):
             stale.append((t, last_date))
 
     conn.close()
-    logger.info(f"NIFTY 500 stale tickers (data older than {cutoff}): {len(stale)}/{len(tickers)}")
+    logger.info(
+        f"Stale tickers (>{days_threshold}d old): "
+        f"{len(stale)}/{len(tickers)} from full universe"
+    )
     return stale
 
 
@@ -213,8 +243,8 @@ def sync_nifty500(range_str="3mo", max_workers=5, progress_state=None):
 
 
 def sync_full_history(range_str="2y", max_workers=3):
-    """Sync ALL NIFTY 500 tickers with full 2-year history (for initial setup)."""
-    tickers = _load_nifty500_tickers()
+    """Sync ALL universe tickers with full history (initial setup or rebalance)."""
+    tickers = _get_all_universe_tickers()
     logger.info(f"Full history sync: {len(tickers)} tickers, range={range_str}")
 
     # Force all tickers (not just stale)

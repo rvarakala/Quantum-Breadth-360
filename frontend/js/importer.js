@@ -338,6 +338,7 @@ async function loadNseIndicesStatus() {
     const data = await res.json();
     _nseIdxData = data;
     _renderNseIdxStatus(data);
+    _loadNseUniverseStats();
   } catch(e) {
     console.warn('NSE indices status fetch failed:', e);
   }
@@ -463,3 +464,70 @@ async function syncNseIndices() {
   }, 1500);
 }
 
+
+
+// ── Backfill missing OHLCV ────────────────────────────────────────────────────
+async function backfillMissingOhlcv() {
+  const btn = document.getElementById('nse-idx-backfill-btn');
+  const progress = document.getElementById('nse-idx-progress');
+  const msg      = document.getElementById('nse-idx-prog-msg');
+  const num      = document.getElementById('nse-idx-prog-num');
+  const fill     = document.getElementById('nse-idx-prog-fill');
+
+  if (!btn) return;
+  btn.disabled = true;
+  btn.innerHTML = '<span>⏳</span> Backfilling...';
+  if (progress) progress.style.display = 'block';
+  if (fill) { fill.style.width = '0%'; fill.style.background = 'var(--accent2)'; }
+
+  try {
+    await fetch(`${API}/api/nse-indices/backfill-missing`, { method: 'POST' });
+  } catch(e) {
+    if (msg) msg.textContent = 'Failed: ' + e.message;
+    btn.disabled = false;
+    btn.innerHTML = '<span>📥</span> Backfill Missing OHLCV';
+    return;
+  }
+
+  // Poll progress
+  const poll = setInterval(async () => {
+    try {
+      const res = await fetch(`${API}/api/nse-indices/sync/status`);
+      const s   = await res.json();
+      if (msg) msg.textContent = s.message || 'Backfilling...';
+      if (s.total > 0 && fill) {
+        fill.style.width = Math.round((s.progress / s.total) * 100) + '%';
+        if (num) num.textContent = `${s.progress}/${s.total}`;
+      }
+      if (!s.running) {
+        clearInterval(poll);
+        if (fill) { fill.style.width = '100%'; fill.style.background = '#22c55e'; }
+        btn.disabled = false;
+        btn.innerHTML = '<span>✓</span> Backfill Done';
+        setTimeout(() => {
+          btn.innerHTML = '<span>📥</span> Backfill Missing OHLCV';
+        }, 3000);
+        // Refresh coverage stats
+        await _loadNseUniverseStats();
+      }
+    } catch(e) {}
+  }, 2000);
+}
+
+// ── Load universe coverage stats ──────────────────────────────────────────────
+async function _loadNseUniverseStats() {
+  try {
+    const res  = await fetch(`${API}/api/nse-indices/universe-stats`);
+    const data = await res.json();
+    if (!data || data.error) return;
+
+    const totalEl    = document.getElementById('nse-idx-total-synced');
+    const coverageEl = document.getElementById('nse-idx-coverage');
+    const summary    = document.getElementById('nse-idx-summary');
+
+    if (data.unique_tickers > 0 && summary) {
+      summary.style.display = 'flex';
+      if (coverageEl) coverageEl.textContent = (data.coverage_pct || 0) + '%';
+    }
+  } catch(e) { /* silent */ }
+}

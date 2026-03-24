@@ -56,6 +56,7 @@ from email_digest import generate_market_summary, generate_summary_html
 from nse_indices import (
     sync_nse_indices, get_index_constituents, get_index_registry_status,
     get_ticker_indices, NSE_INDEX_REGISTRY, _ensure_tables as ensure_nse_tables,
+    get_universe_stats, get_stale_constituent_tickers, get_all_constituent_tickers,
 )
 from market_cap import (
     import_market_cap_csv, get_mcap_for_ticker, get_all_mcaps,
@@ -900,6 +901,45 @@ def nse_indices_list():
         result[cat].append({"index_name": name, "csv_file": csv_file})
     return result
 
+@app.get("/api/nse-indices/universe-stats")
+def nse_universe_stats():
+    """Summary: unique tickers, OHLCV coverage, last sync."""
+    try:
+        return get_universe_stats()
+    except Exception as e:
+        return {"error": str(e), "unique_tickers": 0, "tickers_with_ohlcv": 0}
+
+@app.post("/api/nse-indices/backfill-missing")
+async def nse_backfill_missing(background_tasks: BackgroundTasks):
+    """Backfill 2-year OHLCV for any constituent tickers missing history."""
+    if _nse_indices_state["running"]:
+        return {"message": "Sync already running"}
+
+    def _run():
+        from nse_indices import get_tickers_missing_ohlcv
+        from nse_sync import sync_ticker
+        _nse_indices_state["running"] = True
+        try:
+            missing = get_tickers_missing_ohlcv(years=2)
+            total = len(missing)
+            _nse_indices_state["total"]   = total
+            _nse_indices_state["message"] = f"Backfilling {total} tickers with <2y history..."
+            done = 0
+            for ticker, count, last_date in missing:
+                done += 1
+                _nse_indices_state["progress"] = done
+                _nse_indices_state["message"]  = f"Backfilling {ticker} ({done}/{total}) — had {count} days"
+                sync_ticker(ticker, range_str="2y")
+                import time; time.sleep(0.2)
+            _nse_indices_state["message"] = f"✅ Backfill complete — {total} tickers updated"
+        except Exception as e:
+            _nse_indices_state["message"] = f"Error: {e}"
+        finally:
+            _nse_indices_state["running"] = False
+
+    background_tasks.add_task(_run)
+    return {"message": "Backfill started — poll /api/nse-indices/sync/status"}
+
 # ── Startup: load disk cache + pre-warm breadth in background ───────────────
 @app.on_event("startup")
 async def startup_event():
@@ -1160,9 +1200,9 @@ async def fetch_live(background_tasks: BackgroundTasks):
 
     # 3. Sync ALL tickers that don't have today's data
     try:
-        from nse_sync import _get_stale_tickers
+        from nse_sync import _get_stale_tickers, sync_nifty500
         stale = _get_stale_tickers(days_threshold=0)  # anything not updated today
-        logger.info(f"Fetch Live: {len(stale)} tickers need today's data")
+        logger.info(f"Fetch Live: {len(stale)} tickers need today's data (full universe)")
         if stale:
             result = sync_nifty500(range_str="5d", max_workers=10)
         else:
