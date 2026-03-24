@@ -23,6 +23,16 @@ if not exist "venv\Scripts\activate.bat" (
     echo.
 )
 
+:: Create .env from example if not exists
+if not exist ".env" (
+    if exist ".env.example" (
+        copy ".env.example" ".env" >nul
+        echo [SETUP] Created .env file from template
+        echo [SETUP] Edit .env and add your GROQ_API_KEY for AI features
+        echo.
+    )
+)
+
 :: Activate venv and start
 call venv\Scripts\activate.bat
 echo [START] Starting Quantum Breadth 360 backend...

@@ -18,6 +18,14 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import os, pathlib
 
+# Load .env file if present (GROQ_API_KEY etc.)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(pathlib.Path(__file__).parent / ".env")
+    load_dotenv(pathlib.Path(__file__).parent.parent / ".env")  # project root too
+except ImportError:
+    pass  # python-dotenv not installed — env vars still work
+
 from cache import _cache, get_cache, set_cache, _load_disk_cache
 from utils import (
     safe_float, flatten_df, safe_download, get_close, get_change_pct,
