@@ -108,7 +108,10 @@ function switchTab(tab) {
     const list = document.getElementById('scr-list');
     if (list && !list.children.length) initScrList();
   }
-  if (tab === 'importer') impCheckStored();
+  if (tab === 'importer') {
+    impCheckStored();
+    if (typeof loadNseIndicesStatus === 'function') loadNseIndicesStatus();
+  }
   if (tab === 'leaders') { if(!_leadersData) initLeadersTab(); }
   if (tab === 'stockbee') { if(!_stockbeeData) loadStockbee(); }
   if (tab === 'smart-metrics') { /* ready on demand */ }

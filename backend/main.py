@@ -53,6 +53,10 @@ from watchlist import (
     get_watchlist_data, create_alert, list_alerts, delete_alert, check_alerts,
 )
 from email_digest import generate_market_summary, generate_summary_html
+from nse_indices import (
+    sync_nse_indices, get_index_constituents, get_index_registry_status,
+    get_ticker_indices, NSE_INDEX_REGISTRY, _ensure_tables as ensure_nse_tables,
+)
 from market_cap import (
     import_market_cap_csv, get_mcap_for_ticker, get_all_mcaps,
     filter_by_mcap, format_mcap, get_mcap_tier, _ensure_table as ensure_mcap_table,
@@ -97,6 +101,9 @@ if FRONTEND_DIR.exists():
         app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
     except Exception:
         pass
+
+# NSE Indices sync state
+_nse_indices_state = {"running": False, "progress": 0, "total": 0, "message": "", "result": None}
 
 # Sync state (in-memory progress tracker)
 _sync_state = {"running": False, "progress": 0, "total": 0,
@@ -830,6 +837,69 @@ async def get_multi_screener(
     _rs_cache[cache_key] = {"data": result, "ts": datetime.now(timezone.utc)}
     return result
 
+
+# ── NSE Index Universe Endpoints ─────────────────────────────────────────────
+
+@app.get("/api/nse-indices/status")
+def nse_indices_status():
+    """Get sync status for all NSE indices grouped by category."""
+    try:
+        return get_index_registry_status()
+    except Exception as e:
+        return {"error": str(e), "broad": [], "sectoral": [], "thematic": []}
+
+@app.post("/api/nse-indices/sync")
+async def nse_indices_sync(background_tasks: BackgroundTasks):
+    """Sync all NSE index constituent CSVs from niftyindices.com."""
+    if _nse_indices_state["running"]:
+        return {"message": "Sync already running", **_nse_indices_state}
+
+    def _run():
+        _nse_indices_state["running"]  = True
+        _nse_indices_state["progress"] = 0
+        _nse_indices_state["message"]  = "Starting NSE index sync..."
+        try:
+            result = sync_nse_indices(progress_state=_nse_indices_state)
+            _nse_indices_state["result"]  = result
+            _nse_indices_state["message"] = result["message"]
+        except Exception as e:
+            _nse_indices_state["message"] = f"Error: {e}"
+            _nse_indices_state["result"]  = {"error": str(e)}
+        finally:
+            _nse_indices_state["running"] = False
+
+    background_tasks.add_task(_run)
+    return {"message": f"Syncing {len(NSE_INDEX_REGISTRY)} NSE indices in background. Poll /api/nse-indices/sync/status"}
+
+@app.get("/api/nse-indices/sync/status")
+def nse_indices_sync_status():
+    return _nse_indices_state
+
+@app.get("/api/nse-indices/constituents")
+def nse_index_constituents(index_name: str = "NIFTY 500"):
+    """Get all constituent tickers for a given index."""
+    try:
+        stocks = get_index_constituents(index_name)
+        return {"index_name": index_name, "count": len(stocks), "stocks": stocks}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/nse-indices/ticker")
+def nse_ticker_indices(ticker: str):
+    """Get all indices a ticker belongs to."""
+    try:
+        return {"ticker": ticker, "indices": get_ticker_indices(ticker.upper())}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/nse-indices/list")
+def nse_indices_list():
+    """Return the full index registry grouped by category."""
+    result = {"broad": [], "sectoral": [], "thematic": []}
+    for name, (cat, csv_file) in NSE_INDEX_REGISTRY.items():
+        result[cat].append({"index_name": name, "csv_file": csv_file})
+    return result
+
 # ── Startup: load disk cache + pre-warm breadth in background ───────────────
 @app.on_event("startup")
 async def startup_event():
@@ -837,6 +907,13 @@ async def startup_event():
     # 1. Load disk cache immediately — dashboard shows data right away
     _load_disk_cache()
     _build_sector_map()  # load ticker→sector map
+
+    # Ensure NSE index tables exist
+    try:
+        ensure_nse_tables()
+        logger.info("✅ NSE index tables ready")
+    except Exception as e:
+        logger.warning(f"NSE index table init failed: {e}")
 
     # 1b. Auto-import market cap data if table is empty
     try:

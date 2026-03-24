@@ -2319,3 +2319,78 @@ body::before {
 .peep-loading-text { font-size: 14px; font-weight: 600; color: var(--text); }
 .peep-loading-sub { font-size: 11px; color: var(--text3); max-width: 400px; }
 #tab-breadth .bc-two-col .chart-wrap canvas { max-height: 140px; }
+
+
+/* ─── NSE INDEX UNIVERSE SYNC ─────────────────────────────────────────────── */
+.nse-idx-section {
+  background:var(--card-bg);border:var(--card-border);
+  border-radius:var(--surface-radius);padding:20px;margin-bottom:20px;
+}
+.nse-idx-hdr {
+  display:flex;align-items:flex-start;justify-content:space-between;
+  flex-wrap:wrap;gap:12px;margin-bottom:14px;
+}
+.nse-idx-title { color:var(--accent1);font-family:var(--font-mono);font-size:16px;font-weight:700;letter-spacing:.1em;margin:0 0 4px; }
+.nse-idx-desc  { color:var(--text2);font-size:13px;margin:0; }
+.nse-idx-sync-btn {
+  padding:10px 24px;background:var(--accent1);color:#fff;
+  border:none;border-radius:8px;cursor:pointer;
+  font-family:var(--font-mono);font-size:14px;font-weight:700;
+  display:flex;align-items:center;gap:8px;white-space:nowrap;
+  transition:opacity .15s;
+}
+.nse-idx-sync-btn:hover { opacity:.85; }
+.nse-idx-sync-btn:disabled { opacity:.4;cursor:default; }
+
+/* Progress bar */
+.nse-idx-progress { margin-top:10px;display:none; }
+.nse-idx-prog-row { display:flex;align-items:center;gap:10px;margin-bottom:6px; }
+.nse-idx-prog-msg  { font-family:var(--font-mono);font-size:12px;color:var(--text2);flex:1; }
+.nse-idx-prog-num  { font-family:var(--font-mono);font-size:11px;color:var(--accent1); }
+.nse-idx-prog-track { height:6px;background:var(--input-bg);border-radius:3px;overflow:hidden; }
+.nse-idx-prog-fill  { height:100%;background:var(--accent1);width:0%;transition:width .3s;border-radius:3px; }
+
+/* Index category tabs */
+.nse-idx-tabs {
+  display:flex;gap:0;border-bottom:1px solid var(--border);
+  margin:16px 0 12px;
+}
+.nse-idx-tab {
+  padding:7px 16px;font-size:11px;font-weight:600;letter-spacing:.08em;
+  font-family:var(--font-mono);cursor:pointer;border:none;background:none;
+  color:var(--text3);border-bottom:2px solid transparent;transition:all .15s;
+}
+.nse-idx-tab:hover { color:var(--text); }
+.nse-idx-tab.active { color:var(--accent1);border-bottom-color:var(--accent1); }
+
+/* Index cards grid */
+.nse-idx-grid {
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;
+}
+.nse-idx-card {
+  background:var(--bg2);border:1px solid var(--border);border-radius:6px;
+  padding:10px 12px;display:flex;flex-direction:column;gap:4px;
+  transition:border-color .15s;
+}
+.nse-idx-card:hover { border-color:var(--accent1); }
+.nse-idx-card-name  { font-size:12px;font-weight:600;color:var(--text); }
+.nse-idx-card-count { font-family:var(--font-mono);font-size:10px;color:var(--text3); }
+.nse-idx-card-status {
+  display:inline-flex;align-items:center;gap:4px;
+  font-size:9px;font-weight:700;letter-spacing:.08em;
+  padding:2px 7px;border-radius:10px;width:fit-content;margin-top:2px;
+}
+.nse-idx-card-status.ok      { background:rgba(34,197,94,.15);color:#22c55e; }
+.nse-idx-card-status.pending { background:rgba(100,116,139,.15);color:#94a3b8; }
+.nse-idx-card-status.failed  { background:rgba(239,68,68,.15);color:#ef4444; }
+.nse-idx-last-sync { font-size:9px;color:var(--text3);font-family:var(--font-mono); }
+
+/* Summary bar */
+.nse-idx-summary {
+  display:flex;gap:20px;flex-wrap:wrap;
+  padding:10px 14px;background:var(--bg2);border-radius:6px;
+  margin-bottom:12px;font-family:var(--font-mono);
+}
+.nse-idx-stat { display:flex;flex-direction:column;gap:2px; }
+.nse-idx-stat-val { font-size:18px;font-weight:700;color:var(--accent1); }
+.nse-idx-stat-lbl { font-size:9px;color:var(--text3);letter-spacing:.08em; }

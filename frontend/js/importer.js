@@ -322,3 +322,144 @@ window.addEventListener('load', async ()=>{
     }, 500);
   }
 });
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// NSE INDEX UNIVERSE — Sync, Status, Display
+// ════════════════════════════════════════════════════════════════════════════
+
+let _nseIdxData = null;
+let _nseIdxActiveTab = 'broad';
+
+// ── Load status on tab open ──────────────────────────────────────────────────
+async function loadNseIndicesStatus() {
+  try {
+    const res  = await fetch(`${API}/api/nse-indices/status`);
+    const data = await res.json();
+    _nseIdxData = data;
+    _renderNseIdxStatus(data);
+  } catch(e) {
+    console.warn('NSE indices status fetch failed:', e);
+  }
+}
+
+// ── Render status cards ───────────────────────────────────────────────────────
+function _renderNseIdxStatus(data) {
+  if (!data) return;
+
+  const totalSynced   = data.total_synced || 0;
+  const broadList     = data.broad     || [];
+  const sectoralList  = data.sectoral  || [];
+  const thematicList  = data.thematic  || [];
+
+  // Update summary bar
+  const summary = document.getElementById('nse-idx-summary');
+  if (summary && totalSynced > 0) {
+    summary.style.display = 'flex';
+    document.getElementById('nse-idx-total-synced').textContent = totalSynced;
+    document.getElementById('nse-idx-broad-count').textContent  = broadList.filter(i=>i.status==='ok').length;
+    document.getElementById('nse-idx-sectoral-count').textContent = sectoralList.filter(i=>i.status==='ok').length;
+    document.getElementById('nse-idx-thematic-count').textContent = thematicList.filter(i=>i.status==='ok').length;
+
+    // Last sync time
+    const allSynced = [...broadList, ...sectoralList, ...thematicList]
+      .filter(i => i.last_synced).map(i => i.last_synced).sort().reverse();
+    if (allSynced.length > 0) {
+      const d = new Date(allSynced[0]);
+      document.getElementById('nse-idx-last-sync-time').textContent =
+        d.toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'});
+    }
+  }
+
+  // Render cards for active tab
+  _renderNseIdxCards(_nseIdxActiveTab);
+}
+
+function _renderNseIdxCards(tab) {
+  const grid = document.getElementById('nse-idx-grid');
+  if (!grid || !_nseIdxData) return;
+
+  const list = _nseIdxData[tab] || [];
+  if (list.length === 0) {
+    grid.innerHTML = `<div style="color:var(--text3);font-size:12px;padding:20px;grid-column:1/-1;text-align:center">
+      Click "Sync All Indices" to download constituent data from NSE
+    </div>`;
+    return;
+  }
+
+  grid.innerHTML = list.map(idx => {
+    const status    = idx.status || 'pending';
+    const count     = idx.constituent_count || 0;
+    const syncedAt  = idx.last_synced
+      ? new Date(idx.last_synced).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})
+      : null;
+
+    return `<div class="nse-idx-card">
+      <div class="nse-idx-card-name">${idx.index_name}</div>
+      <div class="nse-idx-card-count">${count > 0 ? count + ' stocks' : '—'}</div>
+      <div class="nse-idx-card-status ${status}">
+        ${status === 'ok' ? '✓ Synced' : status === 'failed' ? '✗ Failed' : '○ Pending'}
+      </div>
+      ${syncedAt ? `<div class="nse-idx-last-sync">${syncedAt}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function showNseIdxTab(tab, btn) {
+  _nseIdxActiveTab = tab;
+  document.querySelectorAll('.nse-idx-tab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  _renderNseIdxCards(tab);
+}
+
+// ── Sync button ───────────────────────────────────────────────────────────────
+async function syncNseIndices() {
+  const btn      = document.getElementById('nse-idx-sync-btn');
+  const progress = document.getElementById('nse-idx-progress');
+  const msg      = document.getElementById('nse-idx-prog-msg');
+  const num      = document.getElementById('nse-idx-prog-num');
+  const fill     = document.getElementById('nse-idx-prog-fill');
+
+  if (!btn) return;
+  btn.disabled = true;
+  btn.innerHTML = '<span>⏳</span> Syncing...';
+  if (progress) progress.style.display = 'block';
+  if (fill) { fill.style.width = '0%'; fill.style.background = 'var(--accent1)'; }
+
+  try {
+    await fetch(`${API}/api/nse-indices/sync`, { method: 'POST' });
+  } catch(e) {
+    if (msg) msg.textContent = 'Failed to start: ' + e.message;
+    btn.disabled = false;
+    btn.innerHTML = '<span>⬇</span> Sync All Indices';
+    return;
+  }
+
+  // Poll for progress
+  const poll = setInterval(async () => {
+    try {
+      const res = await fetch(`${API}/api/nse-indices/sync/status`);
+      const s   = await res.json();
+
+      if (msg) msg.textContent = s.message || 'Syncing...';
+      if (s.total > 0) {
+        const pct = Math.round((s.progress / s.total) * 100);
+        if (fill) fill.style.width = pct + '%';
+        if (num)  num.textContent  = `${s.progress}/${s.total}`;
+      }
+
+      if (!s.running) {
+        clearInterval(poll);
+        if (fill) { fill.style.width = '100%'; fill.style.background = '#22c55e'; }
+        btn.disabled = false;
+        btn.innerHTML = '<span>✓</span> Sync Complete';
+        setTimeout(() => {
+          btn.innerHTML = '<span>⬇</span> Sync All Indices';
+        }, 3000);
+        // Reload status to show updated cards
+        await loadNseIndicesStatus();
+      }
+    } catch(e) { /* ignore polling errors */ }
+  }, 1500);
+}
+

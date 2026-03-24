@@ -824,6 +824,79 @@
   <!-- DATA IMPORT TAB -->
   <div class="tab-content" id="tab-importer">
 
+
+    <!-- NSE Index Universe Sync -->
+    <div class="nse-idx-section">
+      <div class="nse-idx-hdr">
+        <div>
+          <h3 class="nse-idx-title">📊 NSE INDEX UNIVERSE</h3>
+          <p class="nse-idx-desc">
+            Download official constituent lists from niftyindices.com —
+            Broad Market, Sectoral &amp; Thematic indices.
+            Powers sector analysis, rotation heatmap, and universe selection.
+          </p>
+        </div>
+        <button class="nse-idx-sync-btn" id="nse-idx-sync-btn" onclick="syncNseIndices()">
+          <span>⬇</span> Sync All Indices
+        </button>
+      </div>
+
+      <!-- Summary stats (shown after sync) -->
+      <div class="nse-idx-summary" id="nse-idx-summary" style="display:none">
+        <div class="nse-idx-stat">
+          <span class="nse-idx-stat-val" id="nse-idx-total-synced">0</span>
+          <span class="nse-idx-stat-lbl">INDICES SYNCED</span>
+        </div>
+        <div class="nse-idx-stat">
+          <span class="nse-idx-stat-val" id="nse-idx-broad-count">0</span>
+          <span class="nse-idx-stat-lbl">BROAD MARKET</span>
+        </div>
+        <div class="nse-idx-stat">
+          <span class="nse-idx-stat-val" id="nse-idx-sectoral-count">0</span>
+          <span class="nse-idx-stat-lbl">SECTORAL</span>
+        </div>
+        <div class="nse-idx-stat">
+          <span class="nse-idx-stat-val" id="nse-idx-thematic-count">0</span>
+          <span class="nse-idx-stat-lbl">THEMATIC</span>
+        </div>
+        <div class="nse-idx-stat">
+          <span class="nse-idx-stat-val" id="nse-idx-last-sync-time">—</span>
+          <span class="nse-idx-stat-lbl">LAST SYNCED</span>
+        </div>
+      </div>
+
+      <!-- Progress bar -->
+      <div class="nse-idx-progress" id="nse-idx-progress">
+        <div class="nse-idx-prog-row">
+          <span class="nse-idx-prog-msg" id="nse-idx-prog-msg">Starting...</span>
+          <span class="nse-idx-prog-num" id="nse-idx-prog-num"></span>
+        </div>
+        <div class="nse-idx-prog-track">
+          <div class="nse-idx-prog-fill" id="nse-idx-prog-fill"></div>
+        </div>
+      </div>
+
+      <!-- Category tabs -->
+      <div class="nse-idx-tabs">
+        <button class="nse-idx-tab active" onclick="showNseIdxTab('broad',this)">
+          📈 Broad Market
+        </button>
+        <button class="nse-idx-tab" onclick="showNseIdxTab('sectoral',this)">
+          🏭 Sectoral
+        </button>
+        <button class="nse-idx-tab" onclick="showNseIdxTab('thematic',this)">
+          🎯 Thematic
+        </button>
+      </div>
+
+      <!-- Index cards -->
+      <div class="nse-idx-grid" id="nse-idx-grid">
+        <div style="color:var(--text3);font-size:12px;padding:20px;grid-column:1/-1;text-align:center">
+          Click "Sync All Indices" to download constituent data from NSE
+        </div>
+      </div>
+    </div>
+
     <!-- NSE Direct Sync Section -->
     <div style="background:var(--card-bg);border:var(--card-border);border-radius:var(--surface-radius);padding:20px;margin-bottom:20px;">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
