@@ -1,0 +1,33 @@
+# Virtual environments
+venv/
+backend/venv/
+__pycache__/
+*.pyc
+
+# Database (large, local data)
+*.db
+backend/breadth_data.db
+
+# Cache
+backend/breadth_cache.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Python
+*.egg-info/
+dist/
+build/
+
+# Backup/temp files
+*.backup
+frontend/index2.html
+frontend/patch_index.py
+backend/python
+*.db-shm
+*.db-wal

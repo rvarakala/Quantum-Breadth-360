@@ -1,0 +1,1115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+<meta http-equiv="Pragma" content="no-cache"/>
+<meta http-equiv="Expires" content="0"/>
+<!-- BUILD: 2026-03-21-v4-4col-no-legend -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Quantum Breadth 360</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<script>
+  // Apply saved theme immediately to prevent flash of wrong theme
+  (function(){
+    var t = localStorage.getItem('breadth-theme');
+    if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+  })();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<link rel="stylesheet" href="/static/css/styles.css?v=__ASSET_VERSION__">
+
+</head>
+<body>
+
+<!-- Background effects -->
+<div class="glow-orb tl"></div>
+<div class="glow-orb br"></div>
+
+<!-- TOP NAV (slim) -->
+<nav id="topnav">
+  <button class="hamburger-btn" id="hamburger-btn" onclick="toggleSidebar()" title="Toggle menu">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+
+  <div class="nav-ticker" id="nav-india">
+    <span class="nav-ticker-label">NIFTY</span>
+    <span class="nav-ticker-price" id="nav-nifty-price">—</span>
+    <span class="nav-ticker-chg" id="nav-nifty-chg">—</span>
+  </div>
+  <div class="divider"></div>
+  <div class="nav-ticker" id="nav-vix">
+    <span class="nav-ticker-label">VIX</span>
+    <span class="nav-ticker-price" id="nav-vix-price">—</span>
+  </div>
+  <div class="divider"></div>
+  <div class="nav-regime">
+    <span style="font-size:9px;color:var(--text3);font-family:var(--font-mono)">REGIME</span>
+    <span class="regime-badge" id="nav-regime">LOADING</span>
+  </div>
+  <div class="divider"></div>
+  <div style="display:flex;flex-direction:column;align-items:center;gap:0">
+    <span class="nav-score" id="nav-score">—</span>
+    <span class="nav-score-label">SCORE</span>
+  </div>
+
+  <div class="nav-spacer"></div>
+
+  <div class="freshness" id="freshness-indicator">
+    <div class="freshness-dot stale"></div>
+    <span id="freshness-text">Not loaded</span>
+  </div>
+
+  <button class="fetch-live-btn" id="fetch-live-btn" onclick="fetchLive()" title="Fetch latest data for all tickers">⚡ Live</button>
+  <button class="refresh-btn" id="refresh-btn" onclick="loadBreadth(true)">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>
+    </svg>
+    <span class="refresh-label">REFRESH</span>
+  </button>
+</nav>
+
+<!-- SIDEBAR + MAIN LAYOUT -->
+<div class="app-layout" id="app-layout">
+  <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <div class="nav-logo-dot"></div>
+      <span class="sidebar-logo-text">QUANTUM BREADTH<span>360</span></span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-group">
+        <div class="nav-group-label">MARKET</div>
+        <button class="nav-item active" data-tab="overview" onclick="switchTab('overview')">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          <span class="nav-label">Overview</span>
+        </button>
+        <button class="nav-item" data-tab="breadth" onclick="switchTab('breadth')">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/></svg>
+          <span class="nav-label">Breadth Charts</span>
+        </button>
+        <button class="nav-item" data-tab="sectors" onclick="switchTab('sectors')">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+          <span class="nav-label">Sectors</span>
+        </button>
+        <button class="nav-item" data-tab="compare" onclick="switchTab('compare')">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          <span class="nav-label">India vs US</span>
+        </button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label">ANALYSIS</div>
+        <button class="nav-item" data-tab="screeners" onclick="switchTab('screeners')">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          <span class="nav-label">Screeners</span>
+        </button>
+        <button class="nav-item" data-tab="scanner" onclick="switchTab('scanner')">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <span class="nav-label">Scanner</span>
+        </button>
+        <button class="nav-item" data-tab="leaders" onclick="switchTab('leaders')">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          <span class="nav-label">Leaders</span>
+        </button>
+        <button class="nav-item" data-tab="stockbee" onclick="switchTab('stockbee')">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
+          <span class="nav-label">Stockbee MB</span>
+        </button>
+        <button class="nav-item" data-tab="smart-metrics" onclick="switchTab('smart-metrics')">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/><circle cx="17" cy="7" r="3" fill="none"/></svg>
+          <span class="nav-label">Smart Metrics</span>
+        </button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label">TOOLS</div>
+        <button class="nav-item" data-tab="charts" onclick="switchTab('charts')">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+          <span class="nav-label">Charts</span>
+        </button>
+        <button class="nav-item" data-tab="watchlist" onclick="switchTab('watchlist')">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          <span class="nav-label">Watchlist</span>
+          <span id="wl-alert-badge" class="wl-alert-badge" style="display:none">0</span>
+        </button>
+        <button class="nav-item" data-tab="peep-into-past" onclick="switchTab('peep-into-past')">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span class="nav-label">Peep Into Past</span>
+        </button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label">DATA</div>
+        <button class="nav-item" data-tab="importer" onclick="switchTab('importer')">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          <span class="nav-label">Data Import</span>
+        </button>
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="sidebar-market-tabs">
+        <button class="market-tab active" data-market="INDIA" onclick="switchMarket('INDIA')">India</button>
+        <button class="market-tab" data-market="US" onclick="switchMarket('US')">US</button>
+      </div>
+      <button class="nav-item sidebar-footer-btn" onclick="openSummaryModal()">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+        <span class="nav-label">Email Summary</span>
+      </button>
+      <button class="nav-item sidebar-footer-btn" onclick="clearBreadthCache()" id="sidebar-clear-cache-btn" title="Clear all breadth caches and recompute fresh">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        <span class="nav-label">Clear Cache</span>
+      </button>
+      <button class="nav-item sidebar-footer-btn" onclick="toggleTheme()" id="sidebar-theme-btn">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        <span class="nav-label" id="sidebar-theme-label">Toggle Theme</span>
+      </button>
+      <button class="nav-item sidebar-footer-btn sidebar-collapse-btn" onclick="toggleSidebarCollapse()" title="Collapse sidebar">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+        <span class="nav-label">Collapse</span>
+      </button>
+    </div>
+  </aside>
+  <main class="main-content" id="main-content">
+    <div id="app">
+
+
+  <!-- LEADERS TAB -->
+  <div class="tab-content" id="tab-leaders">
+    <div id="ldr-loading" class="ldr-loading">
+      <div style="margin-bottom:10px;font-size:20px">★</div>
+      Loading leaders data...
+    </div>
+    <div id="ldr-content" style="display:none">
+      <div class="ldr-regime bull" id="ldr-regime-bar">
+        <div class="ldr-regime-dot"></div>
+        <div>
+          <div class="ldr-regime-name" id="ldr-regime-name">Q-BRAM: —</div>
+          <div class="ldr-regime-msg"  id="ldr-regime-msg">Loading...</div>
+        </div>
+        <div class="ldr-regime-stats" id="ldr-regime-stats"></div>
+        <button class="ldr-refresh-btn" onclick="loadLeaders(true)">⟳ Refresh</button>
+      </div>
+      <div class="ldr-sector-strip">
+        <div class="ldr-sector-hdr">SECTOR HEALTH — click to filter leaders</div>
+        <div class="ldr-sector-chips" id="ldr-sector-chips">
+          <span style="font-size:11px;color:var(--text3)">Loading sectors...</span>
+        </div>
+      </div>
+      <div style="padding:6px 16px;display:flex;align-items:center;gap:10px">
+        <div class="mcap-filter-wrap">
+          <label>Cap Filter:</label>
+          <select id="ldr-mcap-filter" onchange="loadLeaders(false)">
+            <option value="0">All Caps</option>
+            <option value="500" selected>Exclude Micro (&gt;₹500 Cr)</option>
+            <option value="5000">Mid Cap+ (&gt;₹5,000 Cr)</option>
+            <option value="20000">Large Cap+ (&gt;₹20,000 Cr)</option>
+          </select>
+        </div>
+      </div>
+      <div id="ldr-tiers-wrap"></div>
+    </div>
+  </div><!-- /tab-leaders -->
+
+  <!-- Leaders Full View Modal -->
+  <div id="ldr-fullview" class="ldr-fv-overlay" style="display:none">
+    <div class="ldr-fv-modal">
+      <div class="ldr-fv-header">
+        <div>
+          <h2 id="ldr-fv-title" class="ldr-fv-title">ELITE LEADERS</h2>
+          <span id="ldr-fv-count" class="ldr-fv-count">0 stocks</span>
+        </div>
+        <div class="ldr-fv-actions">
+          <button class="ldr-fv-export-btn" onclick="exportLdrPNG()" title="Export as PNG">📷 PNG</button>
+          <button class="ldr-fv-export-btn" onclick="exportLdrExcel()" title="Export as Excel">📊 Excel</button>
+          <button class="ldr-fv-export-btn" onclick="exportLdrPDF()" title="Export as PDF">📄 PDF</button>
+          <button class="ldr-fv-close-btn" onclick="closeLdrFullView()">✕</button>
+        </div>
+      </div>
+      <div class="ldr-fv-body">
+        <table class="ldr-fv-table">
+          <thead id="ldr-fv-thead"></thead>
+          <tbody id="ldr-fv-tbody"></tbody>
+        </table>
+      </div>
+      <div class="ldr-fv-footer" id="ldr-fv-footer"></div>
+    </div>
+  </div>
+
+  <!-- STOCKBEE MB TAB -->
+  <div class="tab-content" id="tab-stockbee">
+    <div id="sb-loading" style="text-align:center;padding:60px 0;color:var(--text2)">
+      <div style="margin-bottom:10px;font-size:20px">📊</div>
+      Loading Stockbee Market Breadth...
+    </div>
+    <div id="sb-content" style="display:none">
+      <!-- Regime badge -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+        <div class="section-header" style="margin-bottom:0">
+          <span style="font-size:13px;letter-spacing:.1em;color:var(--cyan);font-family:var(--font-mono)">STOCKBEE MARKET BREADTH</span>
+          <span style="font-size:11px;color:var(--text3);font-family:var(--font-mono)" id="sb-universe-info"></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span id="sb-regime-badge" class="regime-badge" style="font-size:10px;letter-spacing:.1em;padding:5px 14px;border-radius:4px"></span>
+          <button onclick="loadStockbee(true)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);font-size:11px;padding:5px 12px;border-radius:4px;cursor:pointer;font-family:var(--font-mono)">⟳ Refresh</button>
+        </div>
+      </div>
+
+      <!-- Top metric cards -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px">
+        <div class="metric-card" id="sb-card-up4">
+          <div style="font-size:9px;letter-spacing:.1em;color:var(--text3);margin-bottom:6px;font-family:var(--font-mono)">UP 4%+ TODAY</div>
+          <div style="font-size:28px;font-weight:700;color:var(--green);font-family:var(--font-mono)" id="sb-up4-val">—</div>
+        </div>
+        <div class="metric-card" id="sb-card-dn4">
+          <div style="font-size:9px;letter-spacing:.1em;color:var(--text3);margin-bottom:6px;font-family:var(--font-mono)">DOWN 4%+ TODAY</div>
+          <div style="font-size:28px;font-weight:700;color:var(--red);font-family:var(--font-mono)" id="sb-dn4-val">—</div>
+        </div>
+        <div class="metric-card" id="sb-card-r5">
+          <div style="font-size:9px;letter-spacing:.1em;color:var(--text3);margin-bottom:6px;font-family:var(--font-mono)">5-DAY RATIO</div>
+          <div style="font-size:28px;font-weight:700;font-family:var(--font-mono)" id="sb-r5-val">—</div>
+        </div>
+        <div class="metric-card" id="sb-card-r10">
+          <div style="font-size:9px;letter-spacing:.1em;color:var(--text3);margin-bottom:6px;font-family:var(--font-mono)">10-DAY RATIO</div>
+          <div style="font-size:28px;font-weight:700;font-family:var(--font-mono)" id="sb-r10-val">—</div>
+        </div>
+      </div>
+
+      <!-- T2108 bar -->
+      <div class="metric-card" style="margin-bottom:18px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <span style="font-size:9px;letter-spacing:.1em;color:var(--text3);font-family:var(--font-mono)">T2108 — % ABOVE 40 DMA</span>
+          <span style="font-size:18px;font-weight:700;font-family:var(--font-mono)" id="sb-t2108-val">—</span>
+        </div>
+        <div style="background:var(--bg1);border-radius:6px;height:18px;overflow:hidden;position:relative">
+          <div id="sb-t2108-bar" style="height:100%;border-radius:6px;transition:width .6s ease;width:0%"></div>
+          <div style="position:absolute;top:0;left:30%;height:100%;width:1px;background:rgba(239,68,68,.4)"></div>
+          <div style="position:absolute;top:0;left:60%;height:100%;width:1px;background:rgba(34,197,94,.4)"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text3);margin-top:3px;font-family:var(--font-mono)">
+          <span>BEARISH &lt;30</span><span>NEUTRAL</span><span>BULLISH &gt;60</span>
+        </div>
+      </div>
+
+      <!-- Charts row -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px">
+        <div class="chart-card">
+          <div style="font-size:10px;letter-spacing:.08em;color:var(--text3);margin-bottom:10px;font-family:var(--font-mono)">UP vs DOWN 4%+ DAILY (60 DAYS)</div>
+          <div style="height:240px;position:relative"><canvas id="sb-chart-updown"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div style="font-size:10px;letter-spacing:.08em;color:var(--text3);margin-bottom:10px;font-family:var(--font-mono)">5D &amp; 10D RATIO (60 DAYS)</div>
+          <div style="height:240px;position:relative"><canvas id="sb-chart-ratio"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Momentum Breadth Table -->
+      <div class="chart-card">
+        <div style="font-size:10px;letter-spacing:.08em;color:var(--text3);margin-bottom:12px;font-family:var(--font-mono)">MOMENTUM BREADTH</div>
+        <table style="width:100%;border-collapse:collapse;font-family:var(--font-mono);font-size:12px">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border)">
+              <th style="text-align:left;padding:8px 10px;color:var(--text3);font-weight:500;font-size:9px;letter-spacing:.08em">METRIC</th>
+              <th style="text-align:right;padding:8px 10px;color:var(--green);font-weight:500;font-size:9px;letter-spacing:.08em">UP</th>
+              <th style="text-align:right;padding:8px 10px;color:var(--red);font-weight:500;font-size:9px;letter-spacing:.08em">DOWN</th>
+              <th style="text-align:right;padding:8px 10px;color:var(--blue);font-weight:500;font-size:9px;letter-spacing:.08em">RATIO</th>
+            </tr>
+          </thead>
+          <tbody id="sb-momentum-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div><!-- /tab-stockbee -->
+
+  <!-- SMART METRICS TAB -->
+  <div class="tab-content" id="tab-smart-metrics">
+    <div class="sm-search-bar">
+      <div class="sm-search-row">
+        <input type="text" id="sm-ticker-input" class="sm-ticker-input" placeholder="Enter ticker (e.g. RELIANCE)" autocomplete="off" spellcheck="false">
+        <button class="sm-analyze-btn" onclick="loadSmartMetrics()">Analyze →</button>
+      </div>
+      <div class="sm-quick-chips">
+        <span class="sm-quick-chip" data-ticker="ITC" onclick="loadSmartMetrics('ITC')">ITC</span>
+        <span class="sm-quick-chip" data-ticker="RELIANCE" onclick="loadSmartMetrics('RELIANCE')">RELIANCE</span>
+        <span class="sm-quick-chip" data-ticker="HDFCBANK" onclick="loadSmartMetrics('HDFCBANK')">HDFCBANK</span>
+        <span class="sm-quick-chip" data-ticker="INFY" onclick="loadSmartMetrics('INFY')">INFY</span>
+        <span class="sm-quick-chip" data-ticker="TATAPOWER" onclick="loadSmartMetrics('TATAPOWER')">TATAPOWER</span>
+        <span class="sm-quick-chip" data-ticker="BAJFINANCE" onclick="loadSmartMetrics('BAJFINANCE')">BAJFINANCE</span>
+        <span class="sm-quick-chip" data-ticker="TCS" onclick="loadSmartMetrics('TCS')">TCS</span>
+        <span class="sm-quick-chip" data-ticker="TITAN" onclick="loadSmartMetrics('TITAN')">TITAN</span>
+      </div>
+    </div>
+    <div id="sm-results" class="sm-results"></div>
+  </div><!-- /tab-smart-metrics -->
+
+  <!-- CHARTS TAB -->
+  <div class="tab-content" id="tab-charts">
+    <div class="chart-controls">
+      <div class="chart-search">
+        <input type="text" id="chart-ticker-input" placeholder="Enter ticker (e.g. RELIANCE)" autocomplete="off" spellcheck="false">
+        <button onclick="loadChart()" class="chart-load-btn">Load</button>
+      </div>
+      <div class="chart-tf-btns">
+        <button class="chart-tf active" data-tf="daily" onclick="switchChartTF('daily')">Daily</button>
+        <button class="chart-tf" data-tf="weekly" onclick="switchChartTF('weekly')">Weekly</button>
+        <button class="chart-tf" data-tf="monthly" onclick="switchChartTF('monthly')">Monthly</button>
+      </div>
+      <div class="chart-overlay-toggles">
+        <label><input type="checkbox" id="chk-dma20" checked> 20 DMA</label>
+        <label><input type="checkbox" id="chk-dma50" checked> 50 DMA</label>
+        <label><input type="checkbox" id="chk-dma200" checked> 200 DMA</label>
+        <label><input type="checkbox" id="chk-bb"> Bollinger</label>
+        <label><input type="checkbox" id="chk-rs"> RS Line</label>
+        <label><input type="checkbox" id="chk-vcp"> VCP</label>
+        <label><input type="checkbox" id="chk-pivots"> Pivots</label>
+        <label><input type="checkbox" id="chk-ppv" checked> PPV</label>
+        <label><input type="checkbox" id="chk-bs" checked> Bull Snort</label>
+        <label><input type="checkbox" id="chk-hv" checked> HV Labels</label>
+        <label><input type="checkbox" id="chk-volma" checked> Vol MA</label>
+        <label><input type="checkbox" id="chk-rv" checked> RelVol</label>
+        <label><input type="checkbox" id="chk-iv" checked> IV</label>
+        <label><input type="checkbox" id="chk-fvg" checked> FVG</label>
+        <label><input type="checkbox" id="chk-metrics" checked> Metrics</label>
+      </div>
+    </div>
+    <div class="chart-metrics-strip" id="chart-metrics-strip" style="display:none"></div>
+    <div class="chart-info-bar" id="chart-info-bar">
+      <span style="color:var(--text3);font-size:12px">Type a ticker and press Enter or click Load</span>
+    </div>
+    <div class="chart-container" id="chart-container">
+      <div id="chart-price-pane"></div>
+      <div id="chart-vol-pane"></div>
+    </div>
+  </div><!-- /tab-charts -->
+
+  <!-- Chart Popup Modal (for clicking tickers in other tabs) -->
+  <div id="chart-popup" class="chart-popup-overlay" style="display:none">
+    <div class="chart-popup-modal">
+      <div class="chart-popup-header">
+        <h2 id="chart-popup-title" class="chart-popup-title">TICKER</h2>
+        <div class="chart-popup-controls">
+          <div class="chart-popup-toggles">
+            <label><input type="checkbox" id="pchk-dma20" checked onchange="onPopupOverlayToggle()"> 20</label>
+            <label><input type="checkbox" id="pchk-dma50" checked onchange="onPopupOverlayToggle()"> 50</label>
+            <label><input type="checkbox" id="pchk-dma200" checked onchange="onPopupOverlayToggle()"> 200</label>
+            <label><input type="checkbox" id="pchk-bb" onchange="onPopupOverlayToggle()"> BB</label>
+            <label><input type="checkbox" id="pchk-vcp" onchange="onPopupOverlayToggle()"> VCP</label>
+            <label><input type="checkbox" id="pchk-pivots" onchange="onPopupOverlayToggle()"> Pivots</label>
+            <label><input type="checkbox" id="pchk-ppv" checked onchange="onPopupOverlayToggle()"> PPV</label>
+            <label><input type="checkbox" id="pchk-bs" checked onchange="onPopupOverlayToggle()"> BS</label>
+            <label><input type="checkbox" id="pchk-hv" checked onchange="onPopupOverlayToggle()"> HV</label>
+            <label><input type="checkbox" id="pchk-volma" checked onchange="onPopupOverlayToggle()"> VolMA</label>
+            <label><input type="checkbox" id="pchk-rv" checked onchange="onPopupOverlayToggle()"> RV</label>
+            <label><input type="checkbox" id="pchk-iv" checked onchange="onPopupOverlayToggle()"> IV</label>
+            <label><input type="checkbox" id="pchk-fvg" checked onchange="onPopupOverlayToggle()"> FVG</label>
+          </div>
+          <button class="chart-tf active" data-tf="daily" onclick="switchPopupTF('daily')">D</button>
+          <button class="chart-tf" data-tf="weekly" onclick="switchPopupTF('weekly')">W</button>
+          <button class="chart-tf" data-tf="monthly" onclick="switchPopupTF('monthly')">M</button>
+          <button class="chart-popup-close" onclick="closeChartPopup()">&#10005;</button>
+        </div>
+      </div>
+      <div class="chart-metrics-strip" id="chart-popup-metrics-strip" style="display:none"></div>
+      <div class="chart-popup-body" id="chart-popup-body">
+        <div id="chart-popup-price"></div>
+        <div id="chart-popup-vol"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCANNER TAB -->
+  <div class="tab-content" id="tab-scanner">
+    <div class="scn-wrap">
+      <div class="scn-sidebar">
+        <div class="scn-sidebar-hdr">⚡ SCANNERS</div>
+        <input class="scn-sidebar-search" id="scn-search" placeholder="Search scans..." oninput="filterScanSidebar(this.value)">
+        <div class="scn-sidebar-list" id="scn-sidebar-list">
+          <div class="scn-sidebar-section">PRICE ACTION</div>
+          <div class="scn-sidebar-item" onclick="runQuickScan('52w_high')"       id="qs-52w_high">      <span>🏆</span>52-Week High</div>
+          <div class="scn-sidebar-item" onclick="runQuickScan('52w_low')"        id="qs-52w_low">       <span>📉</span>52-Week Low</div>
+          <div class="scn-sidebar-item" onclick="runQuickScan('near_52w_high')"  id="qs-near_52w_high"> <span>🎯</span>Near 52W High</div>
+          <div class="scn-sidebar-item" onclick="runQuickScan('ath')"            id="qs-ath">           <span>🚀</span>All-Time High</div>
+          <div class="scn-sidebar-item" onclick="runQuickScan('up2pct')"         id="qs-up2pct">        <span>📈</span>Up &gt; 2%</div>
+          <div class="scn-sidebar-item" onclick="runQuickScan('down2pct')"       id="qs-down2pct">      <span>📊</span>Down &gt; 2%</div>
+          <div class="scn-sidebar-section">VOLUME</div>
+          <div class="scn-sidebar-item" onclick="runQuickScan('vol3x')"          id="qs-vol3x">         <span>🔥</span>Volume &gt; 3x Avg</div>
+          <div class="scn-sidebar-item" onclick="runQuickScan('vol5x')"          id="qs-vol5x">         <span>💥</span>Volume &gt; 5x Avg</div>
+          <div class="scn-sidebar-item" onclick="runQuickScan('vol_dry')"        id="qs-vol_dry">       <span>🌵</span>Volume Dry-Up</div>
+          <div class="scn-sidebar-section">MOMENTUM</div>
+          <div class="scn-sidebar-item" onclick="runQuickScan('rs90')"           id="qs-rs90">          <span>⭐</span>RS Rating 90+</div>
+          <div class="scn-sidebar-item" onclick="runQuickScan('rs80')"           id="qs-rs80">          <span>✨</span>RS Rating 80+</div>
+          <div class="scn-sidebar-item" onclick="runQuickScan('stronger_nifty')" id="qs-stronger_nifty"><span>💪</span>Stronger Than Nifty</div>
+          <div class="scn-sidebar-item" onclick="runQuickScan('breakout_king')"  id="qs-breakout_king"> <span>⚡</span>Breakout King</div>
+          <div class="scn-sidebar-section">A/D RATING</div>
+          <div class="scn-sidebar-item" onclick="runQuickScan('ad_a')"           id="qs-ad_a">          <span>🟢</span>A/D = A or A+</div>
+          <div class="scn-sidebar-item" onclick="runQuickScan('ad_b')"           id="qs-ad_b">          <span>🔵</span>A/D = B+ or better</div>
+          <div class="scn-sidebar-section">MY SCREENERS</div>
+          <div class="scn-sidebar-item" onclick="runQuickScan('svro')"               id="qs-svro">              <span>🎯</span>SVRO</div>
+          <div class="scn-sidebar-item" onclick="runQuickScan('vcp_minervini')"      id="qs-vcp_minervini">     <span>📐</span>VCP (Minervini)</div>
+          <div class="scn-sidebar-item" onclick="runQuickScan('manas_arora')"        id="qs-manas_arora">       <span>🌊</span>Manas Arora</div>
+          <div class="scn-sidebar-item" onclick="runQuickScan('qulla_breakout')"     id="qs-qulla_breakout">    <span>🚀</span>Qullamaggie BO</div>
+          <div class="scn-sidebar-item" onclick="runQuickScan('mean_reversion_q')"   id="qs-mean_reversion_q">  <span>🔄</span>Mean Reversion</div>
+        </div>
+      </div>
+      <div class="scn-main">
+        <div class="scn-mkt-bar">
+          <div class="scn-mkt-dot closed" id="scn-mkt-dot"></div>
+          <span style="font-weight:700">NSE / BSE</span>
+          <span style="color:var(--border2)">•</span>
+          <span id="scn-mkt-status" style="color:var(--text2);font-size:11px">—</span>
+          <span style="color:var(--border2)">•</span>
+          <span id="scn-db-info" style="font-size:11px;color:var(--text3)">—</span>
+          <span class="scn-db-label">EOD DATA</span>
+          <span class="scn-mkt-time" id="scn-mkt-time"></span>
+        </div>
+        <div class="scn-results-panel" id="scn-qr-panel" style="display:none">
+          <div class="scn-results-hdr">
+            <span class="scn-results-title" id="scn-qr-title">Results</span>
+            <span class="scr-badge" id="scn-qr-badge" style="display:none"></span>
+            <span style="font-family:var(--font-mono);font-size:10px;color:var(--text3);margin-left:8px" id="scn-qr-stat"></span>
+            <button class="scr-export-btn" onclick="exportScannerPNG()" title="Export as PNG">📷</button>
+            <button class="scr-export-btn" onclick="exportScannerExcel()" title="Export as Excel">📊</button>
+            <button class="scr-export-btn" onclick="exportScannerPDF()" title="Export as PDF">📄</button>
+            <button class="scn-results-close" onclick="closeQuickResults()">✕ Close</button>
+          </div>
+          <div class="scn-results-body" id="scn-qr-body"></div>
+        </div>
+        <div class="scn-section-title">⚡ Top Movers <span style="font-size:10px;color:var(--text3);font-weight:400">(last EOD session)</span></div>
+        <div class="scn-movers-grid">
+          <div class="scn-mover-card"><div class="scn-mover-hdr"><span>🟢</span> TOP GAINERS</div><div id="scn-gainers"><div class="scn-mover-empty">Loading...</div></div></div>
+          <div class="scn-mover-card"><div class="scn-mover-hdr"><span>🔴</span> TOP LOSERS</div><div id="scn-losers"><div class="scn-mover-empty">Loading...</div></div></div>
+          <div class="scn-mover-card"><div class="scn-mover-hdr"><span>📊</span> VOL SPIKES</div><div id="scn-volspikes"><div class="scn-mover-empty">Loading...</div></div></div>
+        </div>
+        <div class="scn-section-title">🔥 Popular Scans</div>
+        <div class="scn-popscan-grid">
+          <div class="scn-popscan-card" onclick="runQuickScan('breakout_king')"><span class="scn-popscan-icon">⚡</span><div><div class="scn-popscan-name">Breakout King</div><div class="scn-popscan-desc">Near 52W high + RS 80+ + Vol surge</div></div></div>
+          <div class="scn-popscan-card" onclick="runQuickScan('vol5x')"><span class="scn-popscan-icon">💥</span><div><div class="scn-popscan-name">Volume &gt; 5x Avg</div><div class="scn-popscan-desc">Unusual volume vs 50-day average</div></div></div>
+          <div class="scn-popscan-card" onclick="runQuickScan('stronger_nifty')"><span class="scn-popscan-icon">💪</span><div><div class="scn-popscan-name">Stronger Than Nifty</div><div class="scn-popscan-desc">RS trend ↑ with rating above 70</div></div></div>
+          <div class="scn-popscan-card" onclick="runQuickScan('near_52w_high')"><span class="scn-popscan-icon">🎯</span><div><div class="scn-popscan-name">Near 52W High</div><div class="scn-popscan-desc">Within 5% of 52-week high</div></div></div>
+          <div class="scn-popscan-card" onclick="runQuickScan('svro')"><span class="scn-popscan-icon">🎯</span><div><div class="scn-popscan-name">SVRO Setup</div><div class="scn-popscan-desc">Stage2 + Vol Surge + RS 85+ + Liquid</div></div></div>
+          <div class="scn-popscan-card" onclick="runQuickScan('vcp_minervini')"><span class="scn-popscan-icon">📐</span><div><div class="scn-popscan-name">VCP (Minervini)</div><div class="scn-popscan-desc">Trend Template + Contraction + Near Pivot</div></div></div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /tab-scanner -->
+
+  <!-- OVERVIEW TAB -->
+  <div class="tab-content active" id="tab-overview">
+
+    <!-- Divergence alert (conditionally shown) -->
+    <div id="divergence-alert" style="display:none"></div>
+
+    <!-- HERO ROW -->
+    <div class="hero-row fade-in">
+
+      <!-- Score Card -->
+      <div class="score-card">
+        <div>
+          <div class="score-label" id="score-market-label">INDIA — NIFTY 500</div>
+          <div class="score-value" id="score-value" style="color:var(--amber)">—</div>
+        </div>
+        <div class="regime-row">
+          <span class="regime-pill" id="regime-pill">LOADING...</span>
+          <span style="font-size:11px;color:var(--text2);font-family:var(--font-mono)">BREADTH SCORE</span>
+        </div>
+        <p class="score-interpretation" id="score-interp">Calculating market breadth metrics across all constituents...</p>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <div style="flex:1;background:var(--bg3);border-radius:6px;padding:8px 10px">
+            <div style="font-size:9px;color:var(--text3);font-family:var(--font-mono);margin-bottom:2px">UNIVERSE</div>
+            <div style="font-size:16px;font-weight:700;font-family:var(--font-mono)" id="universe-size">—</div>
+          </div>
+          <div style="flex:1;background:var(--bg3);border-radius:6px;padding:8px 10px">
+            <div style="font-size:9px;color:var(--text3);font-family:var(--font-mono);margin-bottom:2px">VALID DATA</div>
+            <div style="font-size:16px;font-weight:700;font-family:var(--font-mono)" id="valid-count">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Metrics Grid -->
+      <div class="metrics-grid">
+        <div class="metric-card stagger-1 fade-in">
+          <div class="metric-name">% ABOVE 50 DMA</div>
+          <div class="metric-val" id="pct50" style="color:var(--text)">—</div>
+          <div class="metric-sub" id="pct50-sub">—</div>
+          <div class="metric-bar"><div class="metric-bar-fill" id="pct50-bar" style="width:0%;background:var(--blue)"></div></div>
+        </div>
+        <div class="metric-card stagger-2 fade-in">
+          <div class="metric-name">% ABOVE 200 DMA</div>
+          <div class="metric-val" id="pct200" style="color:var(--text)">—</div>
+          <div class="metric-sub" id="pct200-sub">—</div>
+          <div class="metric-bar"><div class="metric-bar-fill" id="pct200-bar" style="width:0%;background:var(--purple)"></div></div>
+        </div>
+        <div class="metric-card stagger-1 fade-in">
+          <div class="metric-name">% ABOVE 20 DMA</div>
+          <div class="metric-val" id="pct20" style="color:var(--text)">—</div>
+          <div class="metric-sub" id="pct20-sub">—</div>
+          <div class="metric-bar"><div class="metric-bar-fill" id="pct20-bar" style="width:0%;background:var(--cyan)"></div></div>
+        </div>
+        <div class="metric-card stagger-2 fade-in">
+          <div class="metric-name">A/D RATIO</div>
+          <div class="metric-val" id="ad-ratio" style="color:var(--text)">—</div>
+          <div class="metric-sub" id="ad-ratio-sub">—</div>
+          <div class="metric-bar"><div class="metric-bar-fill" id="ad-ratio-bar" style="width:0%;background:var(--green)"></div></div>
+        </div>
+        <div class="metric-card stagger-3 fade-in">
+          <div class="metric-name">NEW 52W HIGHS</div>
+          <div class="metric-val" id="new-highs" style="color:var(--green)">—</div>
+          <div class="metric-sub" id="new-highs-sub">—</div>
+        </div>
+        <div class="metric-card stagger-4 fade-in">
+          <div class="metric-name">NEW 52W LOWS</div>
+          <div class="metric-val" id="new-lows" style="color:var(--red)">—</div>
+          <div class="metric-sub" id="new-lows-sub">—</div>
+        </div>
+      </div>
+
+      <!-- VIX + Index side card -->
+      <div class="side-card stagger-2 fade-in">
+        <div>
+          <div class="score-label">VOLATILITY INDEX</div>
+          <div style="display:flex;align-items:baseline;gap:12px;margin-top:6px">
+            <div class="vix-big" id="vix-val" style="color:var(--text)">—</div>
+            <span class="vix-level" id="vix-level">—</span>
+          </div>
+        </div>
+
+        <div class="index-row">
+          <div>
+            <div class="index-name" id="index-label">INDEX</div>
+            <div class="index-val" id="index-price">—</div>
+          </div>
+          <div style="text-align:right">
+            <div class="index-name">CHANGE</div>
+            <div class="index-val" id="index-chg">—</div>
+          </div>
+        </div>
+
+        <div class="ad-summary">
+          <div class="score-label" style="margin-bottom:8px">ADVANCE / DECLINE</div>
+          <div class="ad-row">
+            <span class="ad-label">▲ Advancing</span>
+            <span class="ad-val" id="adv-count" style="color:var(--green)">—</span>
+          </div>
+          <div class="ad-row">
+            <span class="ad-label">▼ Declining</span>
+            <span class="ad-val" id="dec-count" style="color:var(--red)">—</span>
+          </div>
+          <div class="ad-row">
+            <span class="ad-label">— Unchanged</span>
+            <span class="ad-val" id="unch-count" style="color:var(--text2)">—</span>
+          </div>
+          <div class="ad-bar-wrap" style="margin-top:10px">
+            <div class="ad-bar-adv" id="ad-bar-adv" style="width:50%"></div>
+            <div class="ad-bar-dec" id="ad-bar-dec" style="width:50%"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:4px">
+            <span style="font-size:9px;color:var(--green);font-family:var(--font-mono)" id="adv-pct">—</span>
+            <span style="font-size:9px;color:var(--red);font-family:var(--font-mono)" id="dec-pct">—</span>
+          </div>
+        </div>
+
+        <!-- NH-NL Net Bar -->
+        <div style="background:var(--bg3);border-radius:8px;padding:12px;margin-top:4px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+            <span style="font-size:9px;color:var(--text3);font-family:var(--font-mono)">NET HI-LO BALANCE</span>
+            <span style="font-size:12px;font-weight:700;font-family:var(--font-mono)" id="nh-nl-val">—</span>
+          </div>
+          <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;position:relative">
+            <div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--border2)"></div>
+            <div id="nh-nl-bar" style="height:100%;position:absolute;border-radius:3px;transition:all .8s ease"></div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /hero-row -->
+
+    <!-- Liquidity Stress + Alerts row -->
+    <div class="ls-alerts-row fade-in">
+      <div id="liq-stress-card" class="ls-card"></div>
+      <div id="qbram-alerts-card" class="qa-card"></div>
+    </div>
+
+  </div><!-- /tab-overview -->
+
+  <!-- BREADTH CHARTS TAB -->
+  <div class="tab-content" id="tab-breadth">
+    <div class="charts-row">
+      <div class="chart-card fade-in">
+        <div class="chart-card-header">
+          <span class="chart-title">A-D LINE (CUMULATIVE)</span>
+          <span class="chart-badge" id="ad-badge" style="background:var(--blue-dim);color:var(--blue)">25D</span>
+        </div>
+        <div class="chart-wrap"><canvas id="chart-ad"></canvas></div>
+      </div>
+      <div class="chart-card fade-in stagger-1">
+        <div class="chart-card-header">
+          <span class="chart-title">% ABOVE 50 DMA TREND</span>
+          <span class="chart-badge" id="dma-badge" style="background:var(--purple)22;color:var(--purple)">25D</span>
+        </div>
+        <div class="chart-wrap"><canvas id="chart-dma"></canvas></div>
+      </div>
+      <div class="chart-card fade-in stagger-2">
+        <div class="chart-card-header">
+          <span class="chart-title">NEW HIGH vs NEW LOW</span>
+          <span class="chart-badge" id="nh-badge" style="background:var(--green-dim);color:var(--green)">25D</span>
+        </div>
+        <div class="chart-wrap"><canvas id="chart-nh"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Score gauge full -->
+    <div class="chart-card fade-in" style="margin-bottom:8px;padding:10px 16px">
+      <div class="chart-card-header">
+        <span class="chart-title">BREADTH SCORE INTERPRETATION</span>
+      </div>
+      <div style="display:flex;gap:0;padding:8px 0">
+        <div id="score-zones" style="display:flex;width:100%;height:28px;border-radius:6px;overflow:hidden;position:relative">
+          <!-- filled by JS -->
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding-top:6px">
+        <span style="font-size:9px;color:var(--text3);font-family:var(--font-mono)">0 — PANIC</span>
+        <span style="font-size:9px;color:var(--text3);font-family:var(--font-mono)">20 — DISTRIBUTION</span>
+        <span style="font-size:9px;color:var(--text3);font-family:var(--font-mono)">40 — TRANSITION</span>
+        <span style="font-size:9px;color:var(--text3);font-family:var(--font-mono)">60 — ACCUMULATION</span>
+        <span style="font-size:9px;color:var(--text3);font-family:var(--font-mono)">80 — EXPANSION</span>
+        <span style="font-size:9px;color:var(--text3);font-family:var(--font-mono)">100</span>
+      </div>
+    </div>
+
+    <!-- Regime Timeline (full width) -->
+    <div id="regime-timeline-card" class="chart-card fade-in rt-card" style="margin-bottom:8px"></div>
+
+    <!-- Score History + IV Footprint row -->
+    <div class="bc-two-col">
+      <div class="chart-card fade-in">
+        <div class="chart-card-header">
+          <span class="chart-title">Q-BRAM SCORE ESTIMATE (15 SESSIONS)</span>
+          <span class="chart-badge" style="background:var(--purple)22;color:var(--purple)">15D</span>
+        </div>
+        <div class="chart-wrap"><canvas id="chart-score-history"></canvas></div>
+      </div>
+      <div class="chart-card fade-in">
+        <div class="chart-card-header">
+          <span class="chart-title">IV FOOTPRINT — SMART MONEY (30D)</span>
+          <span class="chart-badge" style="background:var(--green-dim);color:var(--green)">30D</span>
+        </div>
+        <div class="chart-wrap"><canvas id="chart-iv-footprint"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTORS TAB -->
+  <div class="tab-content" id="tab-sectors">
+    <!-- Rotation Heatmap -->
+    <div class="hm-section">
+      <div class="hm-header">
+        <span class="section-title">SECTOR ROTATION HEATMAP</span>
+        <div class="hm-period-group">
+          <button class="hm-period-btn" data-period="1d" onclick="loadHeatmap('1d')">1D</button>
+          <button class="hm-period-btn" data-period="1w" onclick="loadHeatmap('1w')">1W</button>
+          <button class="hm-period-btn active" data-period="1m" onclick="loadHeatmap('1m')">1M</button>
+          <button class="hm-period-btn" data-period="3m" onclick="loadHeatmap('3m')">3M</button>
+        </div>
+        <span class="hm-info" id="hm-info" style="font-size:10px;color:var(--text3);font-family:var(--font-mono)"></span>
+      </div>
+      <div id="heatmap-container" class="heatmap-container">
+        <div style="text-align:center;padding:40px;color:var(--text3)">Loading heatmap...</div>
+      </div>
+    </div>
+
+    <div class="section-header" style="margin-top:24px">
+      <span class="section-title">SECTOR BREADTH — % ABOVE 50 DMA</span>
+      <div class="section-line"></div>
+    </div>
+    <div class="sector-grid" id="sector-grid">
+      <!-- Filled by JS -->
+    </div>
+
+    <!-- Sector chart -->
+    <div class="chart-card fade-in" style="margin-top:0">
+      <div class="chart-card-header">
+        <span class="chart-title">SECTOR ROTATION (5-DAY RETURN)</span>
+      </div>
+      <div style="position:relative;height:180px"><canvas id="chart-sector-bar"></canvas></div>
+    </div>
+  </div>
+
+  <!-- COMPARE TAB -->
+  <div class="tab-content" id="tab-compare">
+    <div class="compare-grid">
+      <div class="compare-card fade-in" id="compare-india">
+        <div class="compare-header">
+          <span class="compare-market">???? INDIA — NIFTY 500</span>
+          <span class="regime-badge" id="cmp-india-regime" style="background:var(--amber-dim);color:var(--amber)">LOADING</span>
+        </div>
+        <div class="compare-score-big" id="cmp-india-score" style="color:var(--amber)">—</div>
+        <div style="font-size:10px;color:var(--text3);font-family:var(--font-mono);margin-bottom:12px">BREADTH SCORE / 100</div>
+        <div class="compare-metrics">
+          <div class="compare-metric">
+            <div class="compare-metric-label">% >50 DMA</div>
+            <div class="compare-metric-val" id="cmp-india-50" style="color:var(--blue)">—</div>
+          </div>
+          <div class="compare-metric">
+            <div class="compare-metric-label">% >200 DMA</div>
+            <div class="compare-metric-val" id="cmp-india-200" style="color:var(--purple)">—</div>
+          </div>
+          <div class="compare-metric">
+            <div class="compare-metric-label">A/D RATIO</div>
+            <div class="compare-metric-val" id="cmp-india-ad" style="color:var(--green)">—</div>
+          </div>
+          <div class="compare-metric">
+            <div class="compare-metric-label">NH-NL NET</div>
+            <div class="compare-metric-val" id="cmp-india-nhc" style="color:var(--text)">—</div>
+          </div>
+          <div class="compare-metric">
+            <div class="compare-metric-label">VIX</div>
+            <div class="compare-metric-val" id="cmp-india-vix" style="color:var(--amber)">—</div>
+          </div>
+          <div class="compare-metric">
+            <div class="compare-metric-label">INDEX CHG</div>
+            <div class="compare-metric-val" id="cmp-india-idxchg">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="compare-card fade-in stagger-1" id="compare-us">
+        <div class="compare-header">
+          <span class="compare-market">???? US — S&P 500</span>
+          <span class="regime-badge" id="cmp-us-regime" style="background:var(--amber-dim);color:var(--amber)">LOADING</span>
+        </div>
+        <div class="compare-score-big" id="cmp-us-score" style="color:var(--amber)">—</div>
+        <div style="font-size:10px;color:var(--text3);font-family:var(--font-mono);margin-bottom:12px">BREADTH SCORE / 100</div>
+        <div class="compare-metrics">
+          <div class="compare-metric">
+            <div class="compare-metric-label">% >50 DMA</div>
+            <div class="compare-metric-val" id="cmp-us-50" style="color:var(--blue)">—</div>
+          </div>
+          <div class="compare-metric">
+            <div class="compare-metric-label">% >200 DMA</div>
+            <div class="compare-metric-val" id="cmp-us-200" style="color:var(--purple)">—</div>
+          </div>
+          <div class="compare-metric">
+            <div class="compare-metric-label">A/D RATIO</div>
+            <div class="compare-metric-val" id="cmp-us-ad" style="color:var(--green)">—</div>
+          </div>
+          <div class="compare-metric">
+            <div class="compare-metric-label">NH-NL NET</div>
+            <div class="compare-metric-val" id="cmp-us-nhc" style="color:var(--text)">—</div>
+          </div>
+          <div class="compare-metric">
+            <div class="compare-metric-label">VIX</div>
+            <div class="compare-metric-val" id="cmp-us-vix" style="color:var(--amber)">—</div>
+          </div>
+          <div class="compare-metric">
+            <div class="compare-metric-label">INDEX CHG</div>
+            <div class="compare-metric-val" id="cmp-us-idxchg">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Head-to-head bar chart -->
+    <div class="chart-card fade-in stagger-2">
+      <div class="chart-card-header">
+        <span class="chart-title">INDIA vs US — BREADTH METRICS COMPARISON</span>
+      </div>
+      <div style="position:relative;height:200px"><canvas id="chart-compare"></canvas></div>
+    </div>
+  </div>
+
+  <!-- DATA IMPORT TAB -->
+  <div class="tab-content" id="tab-importer">
+
+    <!-- NSE Direct Sync Section -->
+    <div style="background:var(--card-bg);border:var(--card-border);border-radius:var(--surface-radius);padding:20px;margin-bottom:20px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+        <div>
+          <h3 style="color:var(--accent1);font-family:var(--font-mono);font-size:16px;margin:0 0 6px 0;letter-spacing:.1em;">NSE DATA SYNC</h3>
+          <p style="color:var(--text2);font-size:14px;margin:0;">Update NIFTY 500 OHLCV data directly from Yahoo Finance (no yfinance library). Fetches latest 3 months for stale tickers.</p>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <button onclick="startNseForceSync()" style="padding:10px 20px;background:#22c55e;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:var(--font-mono);font-size:14px;font-weight:700;">⚡ Force EOD Sync</button>
+          <button onclick="startNseSync('3mo')" style="padding:10px 20px;background:var(--accent1);color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:var(--font-mono);font-size:13px;">Sync Stale (3M)</button>
+          <button onclick="startNseSync('2y')" style="padding:10px 20px;background:var(--accent2);color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:var(--font-mono);font-size:13px;">Full 2Y Sync</button>
+          <button onclick="startFundamentalsSync()" style="padding:10px 20px;background:#f59e0b;color:#000;border:none;border-radius:8px;cursor:pointer;font-family:var(--font-mono);font-size:13px;">Sync EPS/MCap</button>
+        </div>
+      </div>
+      <div id="nse-sync-status" style="margin-top:12px;font-family:var(--font-mono);font-size:13px;color:var(--text2);display:none;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+          <span id="nse-sync-msg">Starting...</span>
+          <span id="nse-sync-progress" style="color:var(--accent1);"></span>
+        </div>
+        <div style="height:6px;background:var(--input-bg);border-radius:3px;overflow:hidden;">
+          <div id="nse-sync-bar" style="height:100%;background:var(--accent1);width:0%;transition:width 0.3s;"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stored-banner" id="stored-banner">
+      <div class="stored-banner-dot"></div>
+      <span class="stored-banner-text" id="stored-banner-text">Local data loaded</span>
+      <span class="stored-banner-use" onclick="switchTab('overview');loadBreadth(false)">Use this data →</span>
+    </div>
+
+    <div class="import-steps">
+      <div class="import-step">
+        <div class="import-step-num">STEP 01</div>
+        <div class="import-step-title">Select CSV Files</div>
+        <div class="import-step-desc">Click Browse or drag &amp; drop. Select all files from both NSE folders at once using Ctrl+A.</div>
+      </div>
+      <div class="import-step">
+        <div class="import-step-num">STEP 02</div>
+        <div class="import-step-title">Auto Processing</div>
+        <div class="import-step-desc">Reads each CSV, strips NSE: prefix, merges both archives, deduplicates by date — entirely in browser.</div>
+      </div>
+      <div class="import-step">
+        <div class="import-step-num">STEP 03</div>
+        <div class="import-step-title">Visualise Instantly</div>
+        <div class="import-step-desc">Save to browser storage then switch to any tab — breadth charts, sectors, and compare all use your local data.</div>
+      </div>
+    </div>
+
+    <div class="drop-zone" id="imp-drop-zone">
+      <input type="file" id="imp-file-input" multiple accept=".csv,.CSV" style="display:none"/>
+      <div class="drop-zone-icon">📂</div>
+      <div class="drop-zone-title">Drop your CSV files here</div>
+      <div class="drop-zone-sub">
+        Works with: <code style="color:var(--amber)">VOLTAS.csv</code>, <code style="color:var(--amber)">NSE:VOLTAS</code> symbol format, any OHLCV CSV<br/>
+        Select files from <strong>both</strong> folders at once — duplicates are merged automatically
+      </div>
+      <button class="browse-btn" onclick="document.getElementById('imp-file-input').click()">Browse Files</button>
+    </div>
+
+    <div class="import-prog-wrap" id="imp-prog-wrap">
+      <div class="import-prog-header">
+        <span class="import-prog-label" id="imp-prog-label">Processing...</span>
+        <span class="import-prog-count" id="imp-prog-count">0 / 0</span>
+      </div>
+      <div class="import-prog-bar-bg"><div class="import-prog-bar" id="imp-prog-bar"></div></div>
+      <div class="import-log" id="imp-log"></div>
+    </div>
+
+    <div class="import-stats" id="imp-stats">
+      <div class="import-stats-grid">
+        <div class="import-stat">
+          <div class="import-stat-label">TICKERS</div>
+          <div class="import-stat-val" id="imp-stat-tickers" style="color:var(--blue)">0</div>
+        </div>
+        <div class="import-stat">
+          <div class="import-stat-label">TOTAL ROWS</div>
+          <div class="import-stat-val" id="imp-stat-rows" style="color:var(--green)">0</div>
+        </div>
+        <div class="import-stat">
+          <div class="import-stat-label">DATA FROM</div>
+          <div class="import-stat-val" id="imp-stat-from" style="color:var(--text);font-size:17px">—</div>
+        </div>
+        <div class="import-stat">
+          <div class="import-stat-label">DATA TO</div>
+          <div class="import-stat-val" id="imp-stat-to" style="color:var(--text);font-size:17px">—</div>
+        </div>
+      </div>
+      <div class="import-ticker-wrap">
+        <div class="import-ticker-head">
+          <span>TICKER</span><span>RANGE BAR</span>
+          <span style="text-align:right">ROWS</span>
+          <span style="text-align:right">FROM</span>
+          <span style="text-align:right">TO</span>
+        </div>
+        <div class="import-ticker-body" id="imp-ticker-list"></div>
+      </div>
+      <div class="import-action-row">
+        <button class="import-action-btn import-btn-save" onclick="impSaveToDB()">💾 Save to Browser Storage</button>
+        <button class="import-action-btn import-btn-go" onclick="impUseData()">📊 Visualise Now</button>
+        <button class="import-action-btn import-btn-clear" onclick="impClear()">🗑 Clear All</button>
+      </div>
+    </div>
+
+  </div><!-- /tab-importer -->
+
+
+  <!-- ══════════ SCREENERS TAB ══════════ -->
+  <div class="tab-content" id="tab-screeners">
+    <div class="scr-layout">
+
+      <!-- LEFT: Screener checklist -->
+      <div class="scr-left">
+        <div class="scr-left-hdr">⚡ SELECT SCREENERS</div>
+        <div class="scr-list" id="scr-list">
+          <!-- Populated by JS -->
+        </div>
+        <div class="scr-foot">
+          <div class="scr-sel-count" id="scr-sel-count">0 screeners selected</div>
+          <div class="mcap-filter-wrap" style="margin:6px 0">
+            <label>Cap Filter:</label>
+            <select id="scr-mcap-filter" onchange="_scannerData=null;">
+              <option value="0">All Caps</option>
+              <option value="500" selected>Exclude Micro (&gt;₹500 Cr)</option>
+              <option value="5000">Mid Cap+ (&gt;₹5,000 Cr)</option>
+              <option value="20000">Large Cap+ (&gt;₹20,000 Cr)</option>
+            </select>
+          </div>
+          <div class="scr-hint">
+            Select 2+ screeners to find stocks passing ALL criteria (intersection).
+          </div>
+          <button class="scr-run-btn" id="scr-run-btn" onclick="runScreeners()" disabled>
+            ▶ RUN SCREENER
+          </button>
+          <button class="scr-force-btn" id="scr-force-btn" onclick="forceRefreshScreener()">
+            ⟳ FORCE REFRESH (clear cache)
+          </button>
+        </div>
+      </div>
+
+      <!-- RIGHT: Results -->
+      <div class="scr-right">
+        <div class="scr-right-hdr">
+          <span class="scr-right-title" id="scr-right-title">RESULTS</span>
+          <span class="scr-match-badge" id="scr-match-badge" style="display:none"></span>
+          <span class="scr-status-txt" id="scr-status-txt">Select screeners and click RUN</span>
+          <button class="scr-export-btn" onclick="exportScreenerPNG()" title="Export as PNG">📷</button>
+          <button class="scr-export-btn" onclick="exportScreenerExcel()" title="Export as Excel">📊</button>
+          <button class="scr-export-btn" onclick="exportScreenerPDF()" title="Export as PDF">📄</button>
+          <button id="scr-hdr-refresh" onclick="forceRefreshScreener()" title="Force Refresh — clears cache, fetches live data"
+            style="display:none;padding:3px 10px;background:transparent;border:1px solid var(--border2);
+              border-radius:4px;color:var(--text3);font-size:10px;cursor:pointer;margin-left:4px;
+              letter-spacing:.06em;transition:all .15s"
+            onmouseover="this.style.borderColor='var(--cyan)';this.style.color='var(--cyan)'"
+            onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--text3)'">
+            ⟳ FORCE REFRESH
+          </button>
+        </div>
+        <div class="scr-tbl-wrap">
+          <div id="scr-results-body">
+            <div class="scr-empty">
+              ⚡<br>
+              Select screeners from the left panel<br>
+              <span style="color:var(--text3);font-size:10px">
+                Multi-select finds stocks passing ALL criteria
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+        <!-- PAGINATION -->
+        <div class="scr-pag" id="scr-pag" style="display:none">
+          <div class="scr-pag-info" id="scr-pag-info">Showing 1–15 of 0</div>
+          <div class="scr-pag-btns" id="scr-pag-btns"></div>
+        </div>
+      </div>
+
+    </div>
+  </div><!-- /tab-screeners -->
+
+  <!-- WATCHLIST TAB -->
+  <div class="tab-content" id="tab-watchlist">
+    <div class="wl-layout">
+      <div class="wl-sidebar">
+        <div class="wl-sidebar-hdr">👁 WATCHLISTS</div>
+        <div class="wl-new-row">
+          <input type="text" id="wl-new-name" placeholder="New watchlist name" class="wl-new-input"
+            onkeydown="if(event.key==='Enter')createNewWatchlist()">
+          <button class="wl-new-btn" onclick="createNewWatchlist()">+</button>
+        </div>
+        <div class="wl-sidebar-list" id="wl-sidebar-list"></div>
+      </div>
+      <div class="wl-main">
+        <div class="wl-main-hdr">
+          <span class="wl-main-title" id="wl-main-title">Select a watchlist</span>
+          <div class="wl-add-row">
+            <input type="text" id="wl-add-ticker" placeholder="Add ticker (e.g. RELIANCE)" class="wl-add-input"
+              onkeydown="if(event.key==='Enter')addWlTicker()">
+            <button class="wl-add-btn" onclick="addWlTicker()">Add</button>
+          </div>
+        </div>
+        <div class="wl-main-body" id="wl-main-body">
+          <div style="text-align:center;padding:60px 0;color:var(--text3)">Select or create a watchlist to begin</div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /tab-watchlist -->
+
+  <!-- PEEP INTO PAST TAB -->
+  <div class="tab-content" id="tab-peep-into-past">
+    <div class="peep-search-bar">
+      <div class="peep-title-row">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span class="peep-title">PEEP INTO PAST</span>
+        <span class="peep-subtitle">Historical Breadth Analysis</span>
+      </div>
+      <div class="peep-search-row">
+        <input type="date" id="peep-date-input" class="peep-date-input" value="2020-03-23" min="1992-01-01" max="2026-03-23">
+        <button class="peep-go-btn" onclick="loadPeepIntoPast()">Go →</button>
+      </div>
+      <div class="peep-date-chips" id="peep-date-chips"></div>
+    </div>
+    <div id="peep-results" class="peep-results"></div>
+  </div><!-- /tab-peep-into-past -->
+
+  <!-- Alert Modal -->
+  <div id="alert-modal" class="alert-modal-overlay" style="display:none">
+    <div class="alert-modal">
+      <div class="alert-modal-hdr">
+        <span>Set Alert — <strong id="alert-modal-ticker"></strong></span>
+        <button class="alert-modal-close" onclick="closeAlertModal()">✕</button>
+      </div>
+      <input type="hidden" id="alert-ticker-hidden">
+      <div class="alert-modal-body">
+        <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Condition</label>
+        <select id="alert-condition" class="alert-select">
+          <option value="price_above">Price Above</option>
+          <option value="price_below">Price Below</option>
+          <option value="above_dma">Above DMA (enter period, e.g. 200)</option>
+          <option value="below_dma">Below DMA (enter period, e.g. 50)</option>
+        </select>
+        <label style="font-size:11px;color:var(--text2);display:block;margin:10px 0 4px">Value</label>
+        <input type="number" id="alert-value" class="alert-input" placeholder="e.g. 1500 or 200">
+        <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+          <button class="alert-cancel-btn" onclick="closeAlertModal()">Cancel</button>
+          <button class="alert-save-btn" onclick="saveAlert()">Save Alert</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary Modal -->
+  <div id="summary-modal" class="summary-modal-overlay" style="display:none">
+    <div class="summary-modal">
+      <div class="summary-modal-hdr">
+        <span style="font-weight:700;font-size:14px">📧 Market Summary</span>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button class="summary-action-btn" onclick="copySummaryHTML()">Copy HTML</button>
+          <button class="summary-action-btn" onclick="downloadSummary()">Download</button>
+          <button class="summary-modal-close" onclick="closeSummaryModal()">✕</button>
+        </div>
+      </div>
+      <div class="summary-modal-body" id="summary-modal-body">
+        <div style="text-align:center;padding:40px;color:var(--text3)">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /app -->
+  </main>
+</div><!-- /app-layout -->
+
+<script src="/static/js/charts.js?v=__ASSET_VERSION__"></script>
+<script src="/static/js/overview.js?v=__ASSET_VERSION__"></script>
+<script src="/static/js/data.js?v=__ASSET_VERSION__"></script>
+<script src="/static/js/importer.js?v=__ASSET_VERSION__"></script>
+<script src="/static/js/screeners.js?v=__ASSET_VERSION__"></script>
+<script src="/static/js/leaders.js?v=__ASSET_VERSION__"></script>
+<script src="/static/js/stockbee.js?v=__ASSET_VERSION__"></script>
+<script src="/static/js/charts-tab.js?v=__ASSET_VERSION__"></script>
+<script src="/static/js/heatmap.js?v=__ASSET_VERSION__"></script>
+<script src="/static/js/watchlist.js?v=__ASSET_VERSION__"></script>
+<script src="/static/js/smart-metrics.js?v=__ASSET_VERSION__"></script>
+<script src="/static/js/autocomplete.js?v=__ASSET_VERSION__"></script>
+<script src="/static/js/peep-into-past.js?v=__ASSET_VERSION__"></script>
+<script src="/static/js/app.js?v=__ASSET_VERSION__"></script>
+
+</body>
+</html>
