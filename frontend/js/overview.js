@@ -16,6 +16,27 @@ function renderOverview(d) {
   rp.style.border = `1px solid ${sc}44`;
   rp.style.color = sc;
   $('score-interp').textContent = regimeInterpretation(regime, score);
+
+  // Show data freshness notice on overview
+  const _ohlcvDate = d.last_ohlcv_date;
+  const _fresh = d.data_freshness;
+  const _noticeEl = document.getElementById('data-freshness-notice');
+  if (_noticeEl && _ohlcvDate && _ohlcvDate !== 'unknown') {
+    const _fmt = new Date(_ohlcvDate).toLocaleDateString('en-IN',
+      {day:'2-digit',month:'short',year:'numeric'});
+    if (_fresh === 'stale' || _fresh === 'EOD') {
+      _noticeEl.style.display = 'flex';
+      _noticeEl.innerHTML = `<span style="color:#f59e0b">⚠</span>
+        <span>Data as of <strong>${_fmt}</strong> EOD —
+        <button onclick="startNseForceSync()" style="background:none;border:none;
+          color:var(--accent1);cursor:pointer;font-family:var(--font-mono);
+          font-size:10px;padding:0;text-decoration:underline">
+          Sync today's data
+        </button></span>`;
+    } else {
+      _noticeEl.style.display = 'none';
+    }
+  }
   $('universe-size').textContent = d.universe_size ?? d.valid ?? '—';
   $('valid-count').textContent = d.valid ?? '—';
 
@@ -229,7 +250,7 @@ function renderCharts(d) {
 
   // New breadth chart components
   renderRegimeTimeline(d);
-  renderScoreHistory(d);
+  renderScoreHistory(d);  // async — fetches real scores from DB
   _ivFootprintLoaded = false; // reset so it reloads on refresh
   renderIVFootprint();
 }
@@ -478,6 +499,24 @@ function renderRegimeTimeline(d) {
     return { date: h.date, pct: h.pct_above_50, ...r };
   });
 
+  // Get the last OHLCV date from breadth data for accurate labelling
+  const ohlcvDate  = currentData?.[currentMarket]?.last_ohlcv_date || null;
+  const freshness  = currentData?.[currentMarket]?.data_freshness  || 'unknown';
+  const lastDay    = days[days.length - 1];
+  const isToday    = ohlcvDate && ohlcvDate === new Date().toISOString().slice(0,10);
+
+  // Data staleness banner
+  let dataNotice = '';
+  if (freshness === 'stale' || freshness === 'EOD') {
+    const dateLabel = ohlcvDate
+      ? new Date(ohlcvDate).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})
+      : 'unknown';
+    dataNotice = `<div style="font-size:9px;color:#f59e0b;font-family:var(--font-mono);
+      padding:4px 10px;background:rgba(245,158,11,.08);border-radius:4px;margin-bottom:8px">
+      ⚠ Data as of ${dateLabel} EOD — run Force EOD Sync for today's data
+    </div>`;
+  }
+
   el.innerHTML = `
     <div class="rt-header">
       <span class="rt-title">REGIME TIMELINE — ${days.length} DAYS</span>
@@ -489,14 +528,31 @@ function renderRegimeTimeline(d) {
         <span style="color:#7f1d1d">● PAN</span>
       </div>
     </div>
+    ${dataNotice}
     <div class="rt-blocks">
-      ${days.map((day, i) => `<div class="rt-block" style="background:${day.color}" title="${day.date}: ${day.full} (${day.pct.toFixed(1)}%)">
-        <span class="rt-block-label">${day.name}</span>
-      </div>`).join('')}
+      ${days.map((day, i) => {
+        const isLast = i === days.length - 1;
+        const label  = isLast && !isToday ? `${day.name}*` : day.name;
+        const border = isLast ? 'border:2px solid rgba(255,255,255,.5)' : '';
+        const tip    = isLast && !isToday
+          ? `${day.date}: ${day.full} (${day.pct.toFixed(1)}%) — LAST EOD`
+          : `${day.date}: ${day.full} (${day.pct.toFixed(1)}%)`;
+        return `<div class="rt-block" style="background:${day.color};${border}"
+          title="${tip}">
+          <span class="rt-block-label">${label}</span>
+        </div>`;
+      }).join('')}
     </div>
     <div class="rt-dates">
       ${days.filter((_, i) => i % Math.max(1, Math.floor(days.length / 6)) === 0 || i === days.length - 1)
-        .map(day => `<span>${day.date.slice(5)}</span>`).join('')}
+        .map((day, i, arr) => {
+          const isLast = i === arr.length - 1;
+          const suffix = isLast && !isToday ? '*EOD' : '';
+          return `<span style="${isLast?'color:var(--amber)':''}">${day.date.slice(5)}${suffix}</span>`;
+        }).join('')}
+    </div>
+    <div style="font-size:9px;color:var(--text3);font-family:var(--font-mono);margin-top:6px">
+      * Last bar = most recent EOD data${!isToday?' — not yet today':''}
     </div>`;
 }
 
@@ -504,41 +560,89 @@ function renderRegimeTimeline(d) {
 // COMPONENT 4: Q-BRAM SCORE HISTORY (15 SESSIONS)
 // ════════════════════════════════════════════════════════════════════════════════
 
-function renderScoreHistory(d) {
+async function renderScoreHistory(d) {
   const canvas = document.getElementById('chart-score-history');
   if (!canvas) return;
 
-  const dmaH = (d.dma_history ?? []).slice(-15);
-  const adH = (d.ad_history ?? []).slice(-15);
-  const nhH = (d.nh_nl_history ?? []).slice(-15);
+  // Try real stored scores first (accurate Q-BRAM scores from DB)
+  let history = [];
+  try {
+    const mkt = (typeof currentMarket !== 'undefined') ? currentMarket : 'INDIA';
+    const res  = await fetch(`${API}/api/breadth/score-history?market=${mkt}&days=30`);
+    const data = await res.json();
+    if (data.history && data.history.length > 0) {
+      history = data.history.slice(-15);
+    }
+  } catch(e) { /* fallback below */ }
 
+  if (history.length >= 3) {
+    // ✅ Real stored scores
+    const labels  = history.map(x => x.date.slice(5));
+    const scores  = history.map(x => x.score);
+    const regimes = history.map(x => x.regime || '');
+    const colors  = scores.map(s =>
+      s >= 60 ? 'rgba(34,197,94,0.9)' : s >= 40 ? 'rgba(245,158,11,0.9)' : 'rgba(239,68,68,0.9)'
+    );
+
+    makeLineChart('chart-score-history', labels, [{
+      data: scores,
+      borderColor: '#a855f7',
+      backgroundColor: 'rgba(168,85,247,0.08)',
+      fill: true,
+      borderWidth: 2,
+      pointBackgroundColor: colors,
+      pointRadius: 3,
+      pointHoverRadius: 5,
+    }], {
+      y: { min: 0, max: 100 },
+      plugins: {
+        tooltip: {
+          callbacks: {
+            title: (items) => labels[items[0].dataIndex],
+            label: (ctx) => [
+              `Score: ${ctx.parsed.y}`,
+              `Regime: ${regimes[ctx.dataIndex] || '—'}`,
+            ]
+          }
+        }
+      }
+    });
+
+    // Update chart title to show it's real data
+    const hdr = canvas.closest('.chart-card')?.querySelector('.chart-title');
+    if (hdr) hdr.textContent = `Q-BRAM SCORE HISTORY (${history.length} SESSIONS)`;
+    return;
+  }
+
+  // Fallback: estimate from dma_history (only if no stored scores yet)
+  const dmaH = (d.dma_history ?? []).slice(-15);
   if (dmaH.length === 0) return;
 
-  // Estimate daily score from available components
+  const adH  = (d.ad_history  ?? []).slice(-15);
+  const nhH  = (d.nh_nl_history ?? []).slice(-15);
   const scores = dmaH.map((dma, i) => {
-    const p50 = dma.pct_above_50 ?? 50;
-    const ad = adH[i] ? adH[i] : { advancers: 250, decliners: 250 };
-    const nh = nhH[i] ? nhH[i] : { net: 0 };
-    const adRatio = ad.advancers / Math.max(ad.decliners, 1);
-
-    // Simplified Q-BRAM estimate using available data
+    const p50     = dma.pct_above_50 ?? 50;
+    const adRatio = adH[i]
+      ? adH[i].advancers / Math.max(adH[i].decliners, 1) : 1;
+    const net     = nhH[i]?.net ?? 0;
     let pts = 0;
-    // B50 (25 pts)
     if (p50 >= 70) pts += 25; else if (p50 >= 55) pts += 20;
     else if (p50 >= 40) pts += 12; else if (p50 >= 25) pts += 5;
-    // NH-NL (20 pts)
-    const net = nh.net ?? 0;
     if (net > 50) pts += 20; else if (net > 10) pts += 15;
     else if (net > -10) pts += 10; else if (net > -50) pts += 5;
-    // A/D (15 pts)
     if (adRatio >= 2.0) pts += 15; else if (adRatio >= 1.3) pts += 12;
     else if (adRatio >= 1.0) pts += 8; else if (adRatio >= 0.7) pts += 4;
-    // Normalize to ~0-100
     return Math.min(Math.round(pts / 60 * 100), 100);
   });
 
   const labels = dmaH.map(x => x.date.slice(5));
-  const colors = scores.map(s => s >= 60 ? 'rgba(34,197,94,0.9)' : s >= 40 ? 'rgba(245,158,11,0.9)' : 'rgba(239,68,68,0.9)');
+  const colors = scores.map(s =>
+    s >= 60 ? 'rgba(34,197,94,0.9)' : s >= 40 ? 'rgba(245,158,11,0.9)' : 'rgba(239,68,68,0.9)'
+  );
+
+  // Mark as estimated
+  const hdr = canvas.closest('.chart-card')?.querySelector('.chart-title');
+  if (hdr) hdr.textContent = `Q-BRAM SCORE ESTIMATE (${dmaH.length} SESSIONS) *`;
 
   makeLineChart('chart-score-history', labels, [{
     data: scores,
@@ -554,7 +658,7 @@ function renderScoreHistory(d) {
     plugins: {
       tooltip: {
         callbacks: {
-          label: (ctx) => `Score: ${ctx.parsed.y}`
+          label: (ctx) => `Est. Score: ${ctx.parsed.y} (*approximate)`
         }
       }
     }

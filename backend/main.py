@@ -1109,6 +1109,41 @@ def smart_screener_results():
     return {"error": "No results yet — run /api/screener/smart/run first",
             "stocks": [], "total": 0}
 
+
+@app.get("/api/breadth/score-history")
+async def get_score_history(market: str = "INDIA", days: int = 30):
+    """
+    Return actual stored Q-BRAM scores from qbram_score_history table.
+    Used by Overview Breadth Charts tab for accurate score history.
+    """
+    import sqlite3
+    db_path = pathlib.Path(__file__).parent / "breadth_data.db"
+    try:
+        conn = sqlite3.connect(str(db_path), timeout=10)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS qbram_score_history (
+                date TEXT NOT NULL, market TEXT NOT NULL,
+                score INTEGER, regime TEXT,
+                pct_above_50 REAL, nh_nl INTEGER, ad_roc REAL,
+                PRIMARY KEY (date, market)
+            )
+        """)
+        rows = conn.execute("""
+            SELECT date, score, regime, pct_above_50, nh_nl, ad_roc
+            FROM qbram_score_history
+            WHERE market = ?
+            ORDER BY date DESC LIMIT ?
+        """, (market.upper(), days)).fetchall()
+        conn.close()
+        history = [
+            {"date": r[0], "score": r[1], "regime": r[2],
+             "pct_above_50": r[3], "nh_nl": r[4], "ad_roc": r[5]}
+            for r in reversed(rows)
+        ]
+        return {"market": market, "days": len(history), "history": history}
+    except Exception as e:
+        return {"error": str(e), "history": []}
+
 # ── Startup: load disk cache + pre-warm breadth in background ───────────────
 @app.on_event("startup")
 async def startup_event():

@@ -454,6 +454,30 @@ def _compute_market(market: str, custom_tickers: dict = None) -> dict:
 
     # Use up to 252 days for charts (1 year), or all available if more
     chart_days = 252
+    # ── Determine last OHLCV date across universe ──────────────────────────
+    last_ohlcv_date = "unknown"
+    try:
+        import sqlite3 as _sql, pathlib as _pl
+        _db = _pl.Path(__file__).parent / "breadth_data.db"
+        if _db.exists():
+            _conn = _sql.connect(str(_db), timeout=10)
+            _row  = _conn.execute(
+                "SELECT MAX(date) FROM ohlcv WHERE market='India'"
+            ).fetchone()
+            _conn.close()
+            if _row and _row[0]:
+                last_ohlcv_date = _row[0]   # e.g. "2026-03-21"
+    except Exception:
+        pass
+
+    # Is data from today or yesterday?
+    from datetime import date as _date
+    _today = _date.today().isoformat()
+    _data_freshness = "today" if last_ohlcv_date == _today else (
+        "EOD" if last_ohlcv_date >= (_date.today().replace(
+            day=_date.today().day-1)).isoformat() else "stale"
+    )
+
     return {**metrics,"market":market,"index_name":cfg["index_name"],"nifty50_price":round(n50,2),"nifty50_change_pct":round(n50c,2),
             "index_price":round(ip,2),"index_change_pct":round(ic,2),"vix":round(vv,2),
             "ad_history":_ad_history(stock_data,chart_days),
@@ -461,6 +485,9 @@ def _compute_market(market: str, custom_tickers: dict = None) -> dict:
             "nh_nl_history":_nh_nl_history(stock_data,chart_days),
             "sector_breadth":_sector_breadth(cfg["sectors"],stock_data),
             "universe_size":len(stock_data),
-            "data_source":"local_db" if DB_AVAILABLE else "live_yfinance"}
+            "data_source":"local_db" if DB_AVAILABLE else "live_yfinance",
+            "last_ohlcv_date": last_ohlcv_date,
+            "data_freshness":  _data_freshness,
+            "computed_at":     datetime.now(timezone.utc).isoformat()}
 
 

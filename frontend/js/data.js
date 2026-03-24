@@ -59,6 +59,32 @@ function updateFreshness() {
     txt.textContent = 'Not loaded';
     return;
   }
+
+  // Show OHLCV data date if available — more meaningful than API call time
+  const data = currentData[currentMarket];
+  const ohlcvDate = data?.last_ohlcv_date;
+  const freshness = data?.data_freshness;
+
+  if (ohlcvDate && ohlcvDate !== 'unknown') {
+    dot.classList.remove('stale');
+    const d = new Date(ohlcvDate);
+    const formatted = d.toLocaleDateString('en-IN', {day:'2-digit', month:'short'});
+    if (freshness === 'today') {
+      txt.textContent = `Data: Today (${formatted})`;
+      dot.style.background = 'var(--green)';
+    } else if (freshness === 'EOD') {
+      txt.textContent = `Data: EOD ${formatted}`;
+      dot.style.background = '#f59e0b';
+      dot.classList.add('stale');
+    } else {
+      txt.textContent = `Data: ${formatted} ⚠ stale`;
+      dot.style.background = 'var(--red)';
+      dot.classList.add('stale');
+    }
+    return;
+  }
+
+  // Fallback: show API call age
   const age = Math.round((Date.now() - lu) / 1000);
   dot.classList.remove('stale');
   if (age < 30) txt.textContent = 'Just updated';
