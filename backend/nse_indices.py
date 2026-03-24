@@ -72,7 +72,7 @@ NSE_INDEX_REGISTRY = {
     "NIFTY CPSE":             ("thematic", "ind_niftycpse_list.csv"),
     "NIFTY Dividend Opp 50":  ("thematic", "ind_niftydividendopportunities50list.csv"),
     "NIFTY100 ESG":           ("thematic", "ind_nifty100esgsectorleaderslist.csv"),
-    "NIFTY India Defence":    ("thematic", "ind_niftyi_ndiadefence_list.csv"),
+    "NIFTY India Defence":    ("thematic", "ind_niftyindiadefence_list.csv"),
     "NIFTY MNC":              ("thematic", "ind_niftymnc_list.csv"),
     "NIFTY India Consumption":("thematic", "ind_niftyindiaconsumption_list.csv"),
     "NIFTY PSE":              ("thematic", "ind_niftypse_list.csv"),
@@ -128,33 +128,82 @@ def _download_index_csv(index_name: str, csv_file: str) -> list:
         "Referer": "https://www.niftyindices.com/",
     }
 
-    try:
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            raw = resp.read().decode("utf-8-sig")  # strip BOM if present
-    except Exception as e:
-        logger.warning(f"Download failed for {index_name} ({csv_file}): {e}")
+    import http.cookiejar, gzip
+
+    # Use a cookie jar — NSE sites require session cookies
+    cookie_jar = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPCookieProcessor(cookie_jar)
+    )
+
+    raw = None
+    # Try main URL first, then alternate URL formats
+    urls_to_try = [
+        url,
+        url.replace("www.niftyindices.com", "niftyindices.com"),
+    ]
+
+    for attempt_url in urls_to_try:
+        try:
+            # Warm up with homepage to get cookies
+            try:
+                home_req = urllib.request.Request(
+                    "https://www.niftyindices.com/", headers=headers)
+                with opener.open(home_req, timeout=10) as _:
+                    pass
+            except Exception:
+                pass  # Cookie warmup failed — try anyway
+
+            req = urllib.request.Request(attempt_url, headers=headers)
+            with opener.open(req, timeout=30) as resp:
+                content = resp.read()
+                # Handle gzip encoding
+                try:
+                    content = gzip.decompress(content)
+                except Exception:
+                    pass
+                raw = content.decode("utf-8-sig")
+            if raw:
+                break
+        except Exception as e:
+            logger.debug(f"URL attempt failed {attempt_url}: {e}")
+            continue
+
+    if not raw:
+        raise Exception(f"All URL attempts failed for {csv_file}")
+
+    # Validate we got actual CSV content (not an HTML error page)
+    if not raw or len(raw) < 50:
+        logger.warning(f"Empty response for {index_name} ({csv_file})")
+        return []
+    if raw.strip().startswith("<!") or raw.strip().startswith("<html"):
+        logger.warning(f"Got HTML instead of CSV for {index_name} ({csv_file})")
         return []
 
     rows = []
     reader = csv.DictReader(io.StringIO(raw))
     for row in reader:
-        # Normalise column names (NSE uses inconsistent caps)
-        row = {k.strip(): v.strip() for k, v in row.items()}
+        # Normalise column names — strip whitespace from keys AND values safely
+        # Values can be None if CSV has empty cells → use str(v or "") to be safe
+        row = {str(k).strip(): str(v).strip() if v is not None else ""
+               for k, v in row.items() if k is not None}
 
-        # Symbol column — try multiple names
-        ticker = (row.get("Symbol") or row.get("symbol") or
-                  row.get("SYMBOL") or "").strip().upper()
-        if not ticker:
+        def _get(*keys, default=""):
+            """Safe multi-key lookup — returns first non-empty value."""
+            for k in keys:
+                v = row.get(k, "")
+                if v and v.strip():
+                    return v.strip()
+            return default
+
+        ticker = _get("Symbol", "symbol", "SYMBOL", "Ticker").upper()
+        if not ticker or ticker in ("-", "N/A", "NA"):
             continue
 
-        company  = (row.get("Company Name") or row.get("company name") or
-                    row.get("Company") or "").strip()
-        industry = (row.get("Industry") or row.get("industry") or
-                    row.get("Sector") or "").strip()
-        series   = (row.get("Series") or row.get("series") or "EQ").strip()
-        isin     = (row.get("ISIN Code") or row.get("ISIN") or
-                    row.get("isin code") or "").strip()
+        company  = _get("Company Name", "company name", "CompanyName", "Company", "NAME")
+        industry = _get("Industry", "industry", "Sector", "sector", "INDUSTRY")
+        series   = _get("Series", "series", "SERIES") or "EQ"
+        isin     = _get("ISIN Code", "ISIN", "isin code", "Isin Code", "ISIN_CODE")
 
         rows.append({
             "ticker":   ticker,
