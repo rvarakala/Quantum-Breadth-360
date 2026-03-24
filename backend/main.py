@@ -53,6 +53,10 @@ from watchlist import (
     get_watchlist_data, create_alert, list_alerts, delete_alert, check_alerts,
 )
 from email_digest import generate_market_summary, generate_summary_html
+from ai_insights import (
+    get_market_intelligence, get_stock_analysis,
+    save_api_key, validate_api_key, _get_api_key,
+)
 from nse_indices import (
     sync_nse_indices, get_index_constituents, get_index_registry_status,
     get_ticker_indices, NSE_INDEX_REGISTRY, _ensure_tables as ensure_nse_tables,
@@ -940,6 +944,92 @@ async def nse_backfill_missing(background_tasks: BackgroundTasks):
     background_tasks.add_task(_run)
     return {"message": "Backfill started — poll /api/nse-indices/sync/status"}
 
+
+# ── AI Insights Endpoints ─────────────────────────────────────────────────────
+
+@app.get("/api/ai/market-intelligence")
+async def ai_market_intelligence(market: str = "INDIA", refresh: bool = False):
+    """
+    Q-BRAM AI Market Intelligence — Overview tab.
+    Generates regime narrative + sector analysis + trading bias.
+    """
+    # Get breadth data (from cache ideally)
+    breadth_key = f"breadth_{market.upper()}"
+    breadth_data = get_cache(breadth_key) or {}
+    if not breadth_data:
+        # Try to compute fresh
+        loop = asyncio.get_event_loop()
+        try:
+            breadth_data = await loop.run_in_executor(
+                executor, lambda: _compute_market(market.upper(),
+                custom_tickers=_custom_tickers)
+            )
+        except Exception as e:
+            return {"error": f"Could not load breadth data: {e}"}
+
+    if not breadth_data or "error" in breadth_data:
+        return {"error": "No breadth data available — run a sync first"}
+
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        executor, get_market_intelligence, breadth_data
+    )
+    return result
+
+
+@app.get("/api/ai/stock-analysis/{ticker}")
+async def ai_stock_analysis(ticker: str):
+    """
+    AI stock setup analysis — Smart Metrics tab.
+    Analyses RS, Stage, A/D, Trend Template and provides setup quality.
+    """
+    ticker = ticker.upper().strip()
+    # Get smart metrics first (reuse existing endpoint logic)
+    loop = asyncio.get_event_loop()
+    metrics = await loop.run_in_executor(executor, get_smart_metrics, ticker)
+    if "error" in metrics:
+        return {"error": f"Could not load metrics for {ticker}: {metrics['error']}"}
+
+    result = await loop.run_in_executor(
+        executor, get_stock_analysis, ticker, metrics
+    )
+    return result
+
+
+@app.post("/api/ai/settings")
+async def ai_save_settings(payload: dict):
+    """Save AI API key to DB."""
+    api_key = (payload.get("groq_api_key") or "").strip()
+    if not api_key:
+        return {"error": "No API key provided"}
+    # Validate first
+    validation = validate_api_key(api_key)
+    if not validation["valid"]:
+        return {"error": f"Invalid key: {validation.get('error', 'unknown')}"}
+    ok = save_api_key(api_key)
+    return {"ok": ok, "message": "Groq API key saved successfully ✅"}
+
+
+@app.get("/api/ai/settings")
+def ai_get_settings():
+    """Check if API key is configured (returns masked key)."""
+    key = _get_api_key()
+    if not key:
+        return {"configured": False, "model": "qwen-qwq-32b"}
+    masked = key[:8] + "..." + key[-4:]
+    return {"configured": True, "masked_key": masked, "model": "qwen-qwq-32b"}
+
+
+@app.post("/api/ai/validate-key")
+async def ai_validate_key(payload: dict):
+    """Test if provided API key works."""
+    api_key = (payload.get("api_key") or "").strip()
+    if not api_key:
+        return {"valid": False, "error": "No key provided"}
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(executor, validate_api_key, api_key)
+    return result
+
 # ── Startup: load disk cache + pre-warm breadth in background ───────────────
 @app.on_event("startup")
 async def startup_event():
@@ -947,6 +1037,27 @@ async def startup_event():
     # 1. Load disk cache immediately — dashboard shows data right away
     _load_disk_cache()
     _build_sector_map()  # load ticker→sector map
+
+    # Load Groq API key from environment variable if set and not already in DB
+    try:
+        import os as _os, sqlite3 as _sq
+        _env_key = _os.environ.get("GROQ_API_KEY", "").strip()
+        if _env_key:
+            _conn = _sq.connect(str(pathlib.Path(__file__).parent / "breadth_data.db"), timeout=10)
+            _conn.execute("""CREATE TABLE IF NOT EXISTS app_settings
+                (key TEXT PRIMARY KEY, value TEXT, updated TEXT)""")
+            _existing = _conn.execute(
+                "SELECT value FROM app_settings WHERE key='groq_api_key'"
+            ).fetchone()
+            if not _existing or not _existing[0]:
+                _conn.execute("""INSERT OR REPLACE INTO app_settings (key,value,updated)
+                    VALUES ('groq_api_key',?,?)""",
+                    (_env_key, datetime.now(timezone.utc).isoformat()))
+                _conn.commit()
+                logger.info("✅ Groq API key loaded from GROQ_API_KEY env var")
+            _conn.close()
+    except Exception as _e:
+        logger.warning(f"API key env load failed: {_e}")
 
     # Ensure NSE index tables exist
     try:

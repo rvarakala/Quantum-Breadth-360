@@ -344,6 +344,25 @@
       </div>
     </div>
     <div id="sm-results" class="sm-results"></div>
+
+    <!-- AI Stock Analysis Card -->
+    <div class="ai-card" id="ai-stock-card" style="display:none">
+      <div class="ai-card-hdr">
+        <div class="ai-card-icon">🎯</div>
+        <span class="ai-card-title">AI SETUP ANALYSIS</span>
+        <span class="ai-card-model" id="ai-stock-model">Qwen 3 32B</span>
+        <button class="ai-card-refresh" onclick="loadStockAnalysis(currentAiTicker, true)" id="ai-stock-refresh">⟳</button>
+      </div>
+      <div id="ai-stock-body">
+        <div class="ai-loading" id="ai-stock-loading" style="display:none">
+          <div class="ai-spinner"></div>
+          <span id="ai-stock-loading-text">Analysing setup...</span>
+        </div>
+        <div class="ai-body" id="ai-stock-text"></div>
+        <div class="ai-meta" id="ai-stock-meta" style="display:none"></div>
+      </div>
+    </div>
+
   </div><!-- /tab-smart-metrics -->
 
   <!-- CHARTS TAB -->
@@ -630,6 +649,29 @@
     <div class="ls-alerts-row fade-in">
       <div id="liq-stress-card" class="ls-card"></div>
       <div id="qbram-alerts-card" class="qa-card"></div>
+    </div>
+
+
+    <!-- AI Market Intelligence Card -->
+    <div class="ai-card fade-in" id="ai-market-card">
+      <div class="ai-card-hdr">
+        <div class="ai-card-icon">🧠</div>
+        <span class="ai-card-title">Q-BRAM AI MARKET INTELLIGENCE</span>
+        <span class="ai-card-model">Qwen 3 32B</span>
+        <button class="ai-card-refresh" onclick="loadMarketIntelligence(true)">⟳</button>
+      </div>
+      <div id="ai-market-body">
+        <div class="ai-no-key" id="ai-market-nokey" style="display:none">
+          <span>🔑 Groq API key not configured</span>
+          <button class="ai-setup-btn" onclick="openAiSettings()">Setup →</button>
+        </div>
+        <div class="ai-loading" id="ai-market-loading" style="display:none">
+          <div class="ai-spinner"></div>
+          <span>Analysing market breadth...</span>
+        </div>
+        <div class="ai-body" id="ai-market-text"></div>
+        <div class="ai-meta" id="ai-market-meta" style="display:none"></div>
+      </div>
     </div>
 
   </div><!-- /tab-overview -->
@@ -1194,7 +1236,31 @@
 <script src="/static/js/smart-metrics.js?v=__ASSET_VERSION__"></script>
 <script src="/static/js/autocomplete.js?v=__ASSET_VERSION__"></script>
 <script src="/static/js/peep-into-past.js?v=__ASSET_VERSION__"></script>
+<script src="/static/js/ai-insights.js?v=__ASSET_VERSION__"></script>
 <script src="/static/js/app.js?v=__ASSET_VERSION__"></script>
+
+
+  <!-- AI Settings Modal -->
+  <div id="ai-settings-modal" class="ai-settings-modal" style="display:none">
+    <div class="ai-settings-box">
+      <div class="ai-settings-title">
+        🧠 AI Insights — Groq API Key
+      </div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:16px">
+        Get your free key at <strong>console.groq.com</strong> (no credit card needed).
+        Uses <strong>Qwen 3 32B</strong> for market & stock analysis.
+      </p>
+      <input type="password" id="ai-key-input" class="ai-key-input"
+        placeholder="gsk_..." autocomplete="off" spellcheck="false">
+      <div id="ai-key-status" style="font-size:11px;color:var(--text3);margin-bottom:12px;font-family:var(--font-mono);min-height:16px"></div>
+      <button class="ai-save-btn" onclick="saveAiApiKey()">Save & Validate Key</button>
+      <button onclick="closeAiSettings()"
+        style="width:100%;padding:8px;background:transparent;border:1px solid var(--border2);
+        border-radius:6px;cursor:pointer;color:var(--text3);margin-top:8px;font-family:var(--font-mono);font-size:12px">
+        Cancel
+      </button>
+    </div>
+  </div>
 
 </body>
 </html>

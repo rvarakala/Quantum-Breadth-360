@@ -39,6 +39,14 @@ async function loadSmartMetrics(ticker) {
   } catch (e) {
     wrap.innerHTML = `<div class="sm-error">Error loading ${t}: ${e.message}</div>`;
   }
+
+  // Trigger AI analysis
+  if (typeof loadStockAnalysis === 'function') {
+    try {
+      const t = document.getElementById('sm-ticker-input')?.value?.trim().toUpperCase();
+      if (t) setTimeout(() => loadStockAnalysis(t), 800);
+    } catch(e) {}
+  }
 }
 
 function _renderSmartMetrics(d, wrap) {
