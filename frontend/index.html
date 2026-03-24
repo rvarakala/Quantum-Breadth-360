@@ -110,6 +110,10 @@
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
           <span class="nav-label">Screeners</span>
         </button>
+        <button class="nav-item" data-tab="smart-screener" onclick="switchTab('smart-screener')">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
+          <span class="nav-label">SMART Screener</span>
+        </button>
         <button class="nav-item" data-tab="scanner" onclick="switchTab('scanner')">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <span class="nav-label">Scanner</span>
@@ -1058,6 +1062,92 @@
   </div><!-- /tab-importer -->
 
 
+
+  <!-- ══════════ SMART SCREENER TAB ══════════ -->
+  <div class="tab-content" id="tab-smart-screener">
+    <div class="smart-scr-panel">
+      <div class="smart-scr-hdr">
+        <div>
+          <div class="smart-scr-title">🧠 SMART TECHNO-FUNDAMENTAL SCREENER</div>
+          <div class="smart-scr-subtitle">
+            Two-pass: RS+Stage pre-filter → Full SMART Score on candidates
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div class="smart-scr-controls">
+        <div class="smart-scr-control">
+          <span>SMART ≥</span>
+          <select class="smart-scr-select" id="smart-scr-min-smart">
+            <option value="70" selected>70 — Elite</option>
+            <option value="60">60 — Quality</option>
+            <option value="50">50 — Developing</option>
+          </select>
+        </div>
+        <div class="smart-scr-control">
+          <span>Stage 2</span>
+          <select class="smart-scr-select" id="smart-scr-stage2">
+            <option value="true" selected>Required</option>
+            <option value="false">Any Stage</option>
+          </select>
+        </div>
+        <div class="smart-scr-control">
+          <span>Min RS</span>
+          <select class="smart-scr-select" id="smart-scr-min-rs">
+            <option value="60" selected>60+</option>
+            <option value="70">70+</option>
+            <option value="80">80+</option>
+            <option value="0">Any</option>
+          </select>
+        </div>
+        <div class="smart-scr-control">
+          <span>Cap</span>
+          <select class="smart-scr-select" id="smart-scr-mcap">
+            <option value="500" selected>Excl Micro (>₹500Cr)</option>
+            <option value="5000">Mid Cap+ (>₹5000Cr)</option>
+            <option value="0">All Caps</option>
+          </select>
+        </div>
+        <button class="smart-scr-run-btn" id="smart-scr-run-btn"
+          onclick="runSmartScreener()">
+          <span>▶</span> Run Screener
+        </button>
+      </div>
+
+      <!-- Progress -->
+      <div class="smart-scr-progress" id="smart-scr-progress">
+        <div class="smart-scr-prog-row">
+          <span class="smart-scr-prog-msg" id="smart-scr-prog-msg">Starting...</span>
+          <span class="smart-scr-prog-num" id="smart-scr-prog-num"></span>
+        </div>
+        <div class="smart-scr-prog-track">
+          <div class="smart-scr-prog-fill" id="smart-scr-prog-fill"></div>
+        </div>
+      </div>
+
+      <!-- Stats row -->
+      <div class="smart-scr-stats" id="smart-scr-stats" style="display:none">
+        <span>Found: <span class="smart-scr-stat-val" id="sss-found">0</span> stocks</span>
+        <span>Screened: <span class="smart-scr-stat-val" id="sss-screened">0</span> candidates</span>
+        <span>Universe: <span class="smart-scr-stat-val" id="sss-universe">0</span> stocks</span>
+        <span>Time: <span class="smart-scr-stat-val" id="sss-elapsed">—</span></span>
+        <span id="sss-cached" style="color:#7c3aed;display:none">⚡ Cached</span>
+      </div>
+
+      <!-- Results table -->
+      <div class="smart-scr-tbl-wrap" id="smart-scr-tbl-wrap">
+        <div class="smart-empty-state" id="smart-scr-empty">
+          <div style="font-size:24px;margin-bottom:8px">🧠</div>
+          Configure filters and click Run Screener<br>
+          <span style="font-size:10px;color:var(--text3)">
+            Pass 1 instant · Pass 2 ~2-4 min · Results cached 4 hours
+          </span>
+        </div>
+      </div>
+    </div>
+  </div><!-- /tab-smart-screener -->
+
   <!-- ══════════ SCREENERS TAB ══════════ -->
   <div class="tab-content" id="tab-screeners">
     <div class="scr-layout">
@@ -1236,6 +1326,7 @@
 <script src="/static/js/smart-metrics.js?v=__ASSET_VERSION__"></script>
 <script src="/static/js/autocomplete.js?v=__ASSET_VERSION__"></script>
 <script src="/static/js/peep-into-past.js?v=__ASSET_VERSION__"></script>
+<script src="/static/js/smart-screener.js?v=__ASSET_VERSION__"></script>
 <script src="/static/js/ai-insights.js?v=__ASSET_VERSION__"></script>
 <script src="/static/js/app.js?v=__ASSET_VERSION__"></script>
 

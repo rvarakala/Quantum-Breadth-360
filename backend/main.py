@@ -51,7 +51,7 @@ from nse_sync import sync_nifty500, sync_full_history, _get_stale_tickers
 from fundamentals_sync import sync_fundamentals, get_eps_for_ticker
 from charts import get_chart_data
 from stock_metrics import compute_stock_metrics, compute_eps_async
-from smart_metrics_service import get_smart_metrics
+from smart_metrics_service import get_smart_metrics, run_smart_screener
 from liquidity_regime import compute_iv_footprint
 from peep_into_past import compute_historical_breadth
 from sectors_heatmap import compute_sector_heatmap
@@ -1037,6 +1037,77 @@ async def ai_validate_key(payload: dict):
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(executor, validate_api_key, api_key)
     return result
+
+
+# ── SMART Screener Endpoints ──────────────────────────────────────────────────
+
+_smart_scr_state: dict = {
+    "running": False, "progress": 0, "total": 0,
+    "message": "Idle", "result": None
+}
+
+@app.post("/api/screener/smart/run")
+async def run_smart_screener_endpoint(
+    background_tasks: BackgroundTasks,
+    min_smart:      int   = 70,
+    min_rs:         int   = 60,
+    require_stage2: bool  = True,
+    min_mcap_cr:    float = 500,
+    market:         str   = "India",
+    refresh:        bool  = False,
+):
+    """
+    Run SMART Techno-Fundamental screener across full NIFTY universe.
+    Two-pass: RS+Stage pre-filter → SMART score candidates.
+    Results cached 4 hours — use refresh=true to force recompute.
+    """
+    if _smart_scr_state["running"]:
+        return {"message": "Screener already running", **_smart_scr_state}
+
+    def _run():
+        _smart_scr_state["running"]  = True
+        _smart_scr_state["progress"] = 0
+        _smart_scr_state["message"]  = "Starting SMART screener..."
+        try:
+            result = run_smart_screener(
+                min_smart=min_smart,
+                min_rs=min_rs,
+                require_stage2=require_stage2,
+                min_mcap_cr=min_mcap_cr,
+                market=market,
+                progress_state=_smart_scr_state,
+            )
+            _smart_scr_state["result"]  = result
+            _smart_scr_state["message"] = result.get("message", "Done")
+        except Exception as e:
+            _smart_scr_state["message"] = f"Error: {e}"
+            _smart_scr_state["result"]  = {"error": str(e), "stocks": []}
+        finally:
+            _smart_scr_state["running"] = False
+
+    background_tasks.add_task(_run)
+    return {
+        "message": "SMART screener started — poll /api/screener/smart/status",
+        "params": {
+            "min_smart": min_smart, "min_rs": min_rs,
+            "require_stage2": require_stage2, "min_mcap_cr": min_mcap_cr,
+        }
+    }
+
+
+@app.get("/api/screener/smart/status")
+def smart_screener_status():
+    """Poll SMART screener progress."""
+    return _smart_scr_state
+
+
+@app.get("/api/screener/smart/results")
+def smart_screener_results():
+    """Get latest SMART screener results (if available)."""
+    if _smart_scr_state.get("result"):
+        return _smart_scr_state["result"]
+    return {"error": "No results yet — run /api/screener/smart/run first",
+            "stocks": [], "total": 0}
 
 # ── Startup: load disk cache + pre-warm breadth in background ───────────────
 @app.on_event("startup")

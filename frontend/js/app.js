@@ -113,6 +113,7 @@ function switchTab(tab) {
     if (typeof loadNseIndicesStatus === 'function') loadNseIndicesStatus();
   }
   if (tab === 'leaders') { if(!_leadersData) initLeadersTab(); }
+  if (tab === 'smart-screener') { /* ready on demand — user clicks Run */ }
   if (tab === 'stockbee') { if(!_stockbeeData) loadStockbee(); }
   if (tab === 'smart-metrics') { /* ready on demand */ }
   if (tab === 'peep-into-past') { _initPeepChips(); }

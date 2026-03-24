@@ -1048,3 +1048,276 @@ def get_smart_metrics(ticker: str) -> dict:
         "smart_score": smart,
         "elapsed": elapsed,
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SMART SCREENER — Run SMART Score across entire NIFTY universe
+# Two-pass: RS+Stage pre-filter → SMART score on candidates only
+# ══════════════════════════════════════════════════════════════════════════════
+
+import threading
+_smart_screener_cache: dict = {}
+_smart_screener_lock = threading.Lock()
+
+SMART_SCREENER_CACHE_TTL = 14400  # 4 hours
+
+
+def run_smart_screener(
+    min_smart: int = 70,
+    min_rs: int = 60,
+    require_stage2: bool = True,
+    min_mcap_cr: float = 500,
+    market: str = "India",
+    progress_state: dict = None,
+) -> dict:
+    """
+    Two-pass SMART screener across the full NIFTY universe.
+
+    Pass 1 — Instant pre-filter (uses already-computed RS rankings data):
+        RS ≥ min_rs + Stage 2 (optional) + mcap filter
+        Reduces ~900 stocks → ~30-80 candidates
+
+    Pass 2 — SMART score each candidate (scrapes screener.in fundamentals):
+        compute_om_score + compute_technicals + compute_smart_score
+        Filter by smart ≥ min_smart
+
+    Returns: list of stocks with full SMART breakdown, sorted by score.
+    """
+    import time as _time
+    t0 = _time.time()
+
+    # ── Cache key ──────────────────────────────────────────────────────────────
+    cache_k = f"smart_scr_{market}_{min_smart}_{min_rs}_{require_stage2}_{min_mcap_cr}"
+    with _smart_screener_lock:
+        if cache_k in _smart_screener_cache:
+            entry = _smart_screener_cache[cache_k]
+            age = _time.time() - entry["ts"]
+            if age < SMART_SCREENER_CACHE_TTL:
+                return {**entry["data"], "cached": True, "cache_age_min": round(age/60)}
+
+    # ── Pass 1: Pre-filter from OHLCV + RS data ────────────────────────────────
+    if progress_state:
+        progress_state["message"] = "Pass 1: Pre-filtering universe..."
+        progress_state["progress"] = 0
+        progress_state["total"] = 100
+
+    try:
+        conn = sqlite3.connect(str(DB_PATH), timeout=30)
+
+        # Get all tickers with sufficient OHLCV data
+        tickers_with_data = [
+            r[0] for r in conn.execute("""
+                SELECT DISTINCT ticker FROM ohlcv
+                WHERE market = 'India'
+                GROUP BY ticker HAVING COUNT(*) >= 60
+                ORDER BY ticker
+            """).fetchall()
+        ]
+        conn.close()
+    except Exception as e:
+        return {"error": f"DB read failed: {e}", "stocks": [], "total": 0}
+
+    if not tickers_with_data:
+        return {"error": "No OHLCV data found — run a sync first", "stocks": [], "total": 0}
+
+    # ── Compute lightweight pre-filter metrics for all tickers ─────────────────
+    candidates = []
+    total_tickers = len(tickers_with_data)
+
+    if progress_state:
+        progress_state["message"] = f"Pass 1: Scanning {total_tickers} tickers..."
+        progress_state["total"] = total_tickers
+
+    conn = sqlite3.connect(str(DB_PATH), timeout=30)
+
+    for i, ticker in enumerate(tickers_with_data):
+        if progress_state and i % 50 == 0:
+            progress_state["progress"] = i
+            progress_state["message"] = f"Pass 1: {i}/{total_tickers} scanned, {len(candidates)} candidates so far..."
+
+        try:
+            rows = conn.execute("""
+                SELECT date, close, high, low, volume
+                FROM ohlcv WHERE ticker=? AND market='India'
+                ORDER BY date DESC LIMIT 260
+            """, (ticker,)).fetchall()
+
+            if len(rows) < 60:
+                continue
+
+            closes  = [r[1] for r in reversed(rows)]
+            highs   = [r[2] for r in reversed(rows)]
+            lows    = [r[3] for r in reversed(rows)]
+            vols    = [r[4] for r in reversed(rows)]
+
+            price   = closes[-1]
+            if not price or price <= 0:
+                continue
+
+            # MA checks
+            ma50  = sum(closes[-50:]) / 50 if len(closes) >= 50 else None
+            ma150 = sum(closes[-150:]) / 150 if len(closes) >= 150 else None
+            ma200 = sum(closes[-200:]) / 200 if len(closes) >= 200 else None
+
+            # Stage 2 check: price > ma50 > ma150 > ma200
+            is_stage2 = False
+            if ma50 and ma150 and ma200:
+                is_stage2 = (price > ma50 > ma150 > ma200)
+
+            if require_stage2 and not is_stage2:
+                continue
+
+            # Quick RS proxy (3M + 6M momentum vs simple benchmark)
+            roc_3m = ((closes[-1] / closes[-63]) - 1) * 100 if len(closes) >= 63 else 0
+            roc_6m = ((closes[-1] / closes[-126]) - 1) * 100 if len(closes) >= 126 else 0
+            rs_proxy = round(roc_3m * 0.6 + roc_6m * 0.4)
+
+            if rs_proxy < (min_rs - 40):  # loose pre-filter
+                continue
+
+            # Volume check — avg vol > 100K (liquidity)
+            avg_vol = sum(vols[-20:]) / 20 if len(vols) >= 20 else 0
+            if avg_vol < 10000:
+                continue
+
+            # pct from high
+            hi52 = max(highs[-252:]) if len(highs) >= 252 else max(highs)
+            pct_from_high = round((price - hi52) / hi52 * 100, 1) if hi52 > 0 else -99
+
+            candidates.append({
+                "ticker":         ticker,
+                "price":          round(price, 2),
+                "is_stage2":      is_stage2,
+                "rs_proxy":       rs_proxy,
+                "pct_from_high":  pct_from_high,
+                "avg_vol":        int(avg_vol),
+            })
+
+        except Exception:
+            continue
+
+    conn.close()
+
+    if not candidates:
+        return {
+            "stocks": [], "total": 0,
+            "message": "No candidates passed pre-filter. Try lowering thresholds.",
+            "elapsed": round(_time.time() - t0, 2),
+        }
+
+    # Sort candidates by rs_proxy desc — best first
+    candidates.sort(key=lambda x: x["rs_proxy"], reverse=True)
+
+    # Cap at 120 candidates for Pass 2 (screener.in rate limits)
+    candidates = candidates[:120]
+
+    # ── Pass 2: Full SMART score on candidates ─────────────────────────────────
+    if progress_state:
+        progress_state["message"] = (
+            f"Pass 2: Computing SMART score for {len(candidates)} candidates..."
+        )
+        progress_state["total"]    = len(candidates)
+        progress_state["progress"] = 0
+
+    results = []
+    from market_cap import get_mcap_for_ticker, format_mcap
+
+    for i, cand in enumerate(candidates):
+        ticker = cand["ticker"]
+
+        if progress_state:
+            progress_state["progress"] = i + 1
+            progress_state["message"]  = (
+                f"Pass 2: Scoring {ticker} ({i+1}/{len(candidates)})..."
+            )
+
+        try:
+            # Fundamentals from screener.in (cached 24h)
+            screener_data = fetch_screener_data(ticker)
+            om   = compute_om_score(screener_data)
+            tech = compute_technicals(ticker)
+            smart = compute_smart_score(om, tech)
+            score = smart["score"]
+
+            if score < min_smart:
+                continue
+
+            # mcap filter
+            mcap_data = get_mcap_for_ticker(ticker) or {}
+            mcap_cr   = mcap_data.get("mcap_cr", 0) or 0
+            if min_mcap_cr > 0 and mcap_cr < min_mcap_cr:
+                continue
+
+            results.append({
+                "ticker":         ticker,
+                "company":        screener_data.get("company_name", ticker),
+                "price":          cand["price"],
+                "smart_score":    score,
+                "verdict":        smart["verdict"],
+                "verdict_color":  smart["verdict_color"],
+                # Component scores
+                "fund_score":     smart["components"]["fund"]["score"],
+                "tech_score":     smart["components"]["tech"]["score"],
+                "rs_score":       smart["components"]["rs"]["score"],
+                "stage_score":    smart["components"]["stage"]["score"],
+                "tpr_score":      smart["components"]["tpr"]["score"],
+                # Technicals
+                "stage":          tech.get("stage", ""),
+                "stage_num":      tech.get("stage_num", 0),
+                "rs_rank":        tech.get("rs_rank", 0),
+                "ad_rating":      tech.get("ad_rating", "N/A"),
+                "tpr":            tech.get("tpr", 0),
+                "pct_from_high":  cand["pct_from_high"],
+                # OM Grade
+                "om_grade":       om.get("grade", "N/A"),
+                "om_pass_count":  om.get("pass_count", 0),
+                # mcap
+                "mcap_cr":        mcap_cr,
+                "mcap_tier":      mcap_data.get("mcap_tier", ""),
+                "mcap_fmt":       format_mcap(mcap_cr),
+                # Tags
+                "tags":           smart.get("tags", []),
+                "sector":         screener_data.get("sector", ""),
+            })
+
+        except Exception as e:
+            logger.debug(f"SMART score failed for {ticker}: {e}")
+            continue
+
+        # Polite delay between screener.in scrapes
+        _time.sleep(0.4)
+
+    # Sort by smart score descending
+    results.sort(key=lambda x: x["smart_score"], reverse=True)
+
+    elapsed = round(_time.time() - t0, 2)
+    total_screened = len(candidates)
+
+    result = {
+        "stocks":          results,
+        "total":           len(results),
+        "screened":        total_screened,
+        "pre_filter_total": len(tickers_with_data),
+        "min_smart":       min_smart,
+        "min_rs":          min_rs,
+        "require_stage2":  require_stage2,
+        "elapsed":         elapsed,
+        "cached":          False,
+        "message": (
+            f"✅ {len(results)} stocks with SMART ≥{min_smart} "
+            f"from {total_screened} candidates ({len(tickers_with_data)} universe)"
+        ),
+    }
+
+    # Cache result
+    with _smart_screener_lock:
+        _smart_screener_cache[cache_k] = {
+            "data": result,
+            "ts":   _time.time(),
+        }
+
+    if progress_state:
+        progress_state["message"]  = result["message"]
+        progress_state["running"]  = False
+
+    return result

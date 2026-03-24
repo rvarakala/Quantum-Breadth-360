@@ -2495,3 +2495,111 @@ body::before {
   font-size:13px;font-weight:700;transition:opacity .15s;
 }
 .ai-save-btn:hover { opacity:.85; }
+
+/* ─── SMART SCREENER ───────────────────────────────────────────────────────── */
+.smart-scr-panel {
+  background:var(--bg1);border:1px solid var(--border);
+  border-radius:10px;padding:18px 20px;margin-bottom:16px;
+  position:relative;overflow:hidden;
+}
+.smart-scr-panel::before {
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,#7c3aed,#f59e0b,#22c55e);
+}
+.smart-scr-hdr {
+  display:flex;align-items:center;gap:12px;
+  margin-bottom:14px;flex-wrap:wrap;
+}
+.smart-scr-title {
+  font-size:13px;font-weight:700;letter-spacing:.1em;
+  color:var(--text);font-family:var(--font-mono);
+}
+.smart-scr-subtitle {
+  font-size:11px;color:var(--text3);font-family:var(--font-mono);
+}
+.smart-scr-controls {
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  padding:12px 14px;background:var(--bg2);border-radius:8px;
+  margin-bottom:14px;
+}
+.smart-scr-control {
+  display:flex;align-items:center;gap:6px;
+  font-size:11px;color:var(--text2);font-family:var(--font-mono);
+}
+.smart-scr-select, .smart-scr-input {
+  background:var(--bg1);border:1px solid var(--border2);
+  border-radius:4px;color:var(--text);font-family:var(--font-mono);
+  font-size:11px;padding:4px 8px;
+}
+.smart-scr-select:focus, .smart-scr-input:focus {
+  outline:none;border-color:#7c3aed;
+}
+.smart-scr-run-btn {
+  padding:8px 20px;background:linear-gradient(135deg,#7c3aed,#6d28d9);
+  color:#fff;border:none;border-radius:6px;cursor:pointer;
+  font-family:var(--font-mono);font-size:12px;font-weight:700;
+  transition:opacity .15s;display:flex;align-items:center;gap:6px;
+  margin-left:auto;
+}
+.smart-scr-run-btn:hover { opacity:.85; }
+.smart-scr-run-btn:disabled { opacity:.4;cursor:default; }
+.smart-scr-progress {
+  margin-bottom:14px;display:none;
+}
+.smart-scr-prog-row {
+  display:flex;align-items:center;gap:10px;margin-bottom:6px;
+}
+.smart-scr-prog-msg { font-family:var(--font-mono);font-size:11px;color:var(--text2);flex:1; }
+.smart-scr-prog-num { font-family:var(--font-mono);font-size:10px;color:#7c3aed; }
+.smart-scr-prog-track { height:5px;background:var(--bg2);border-radius:3px;overflow:hidden; }
+.smart-scr-prog-fill  { height:100%;background:linear-gradient(90deg,#7c3aed,#22c55e);
+                         width:0%;transition:width .4s;border-radius:3px; }
+/* Results table */
+.smart-scr-stats {
+  display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px;
+  font-family:var(--font-mono);font-size:11px;color:var(--text3);
+}
+.smart-scr-stat-val { color:var(--text);font-weight:700; }
+.smart-scr-tbl-wrap { overflow-x:auto; }
+.smart-scr-tbl {
+  width:100%;border-collapse:collapse;
+  font-size:11px;font-family:var(--font-mono);
+}
+.smart-scr-th {
+  padding:7px 10px;text-align:left;
+  font-size:9px;letter-spacing:.1em;color:var(--text3);
+  background:var(--bg2);border-bottom:1px solid var(--border);
+  position:sticky;top:0;cursor:pointer;user-select:none;
+  white-space:nowrap;
+}
+.smart-scr-th:hover { color:var(--text); }
+.smart-scr-th.sorted { color:#7c3aed; }
+.smart-scr-td {
+  padding:7px 10px;border-bottom:1px solid var(--border);
+  white-space:nowrap;
+}
+.smart-scr-tr:hover .smart-scr-td { background:var(--bg2); }
+.smart-score-pill {
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:36px;padding:3px 7px;border-radius:12px;
+  font-weight:700;font-size:11px;
+}
+.smart-score-pill.strong { background:rgba(34,197,94,.2); color:#22c55e; }
+.smart-score-pill.good   { background:rgba(245,158,11,.2);color:#f59e0b; }
+.smart-score-pill.avoid  { background:rgba(239,68,68,.2); color:#ef4444; }
+.smart-comp-bar {
+  display:flex;gap:3px;align-items:center;width:120px;
+}
+.smart-comp-seg {
+  height:6px;border-radius:2px;flex:1;
+  position:relative;cursor:default;
+}
+.smart-empty-state {
+  text-align:center;padding:40px;color:var(--text3);
+  font-family:var(--font-mono);font-size:12px;
+}
+.smart-tag {
+  display:inline-block;padding:2px 7px;border-radius:10px;
+  font-size:9px;font-weight:600;letter-spacing:.06em;
+  background:rgba(124,58,237,.15);color:#a78bfa;margin:1px;
+}
