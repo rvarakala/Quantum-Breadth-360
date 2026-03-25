@@ -1,21 +1,19 @@
 """
-TradingView + yfinance Fundamentals — replaces screener.in scraping
-====================================================================
-Two data layers:
-
+Fundamentals Service — TradingView + yfinance
+=============================================
 LAYER 1 — BATCH (tradingview-screener):
-    One API call → ALL NSE stocks simultaneously (~5-10 seconds)
-    Fields: PE, ROE, ROA, Margins, D/E, EPS TTM, Market Cap
-    Stored in: tv_fundamentals SQLite table (24h cache)
-    Used by: SMART Screener (instant DB lookup, no network per ticker)
+  fetch_batch_fundamentals()  → one call, all NSE stocks, ~10 seconds
+  get_batch_fundamental(tick) → instant DB lookup
+  Stores: tv_fundamentals table (PE, ROE, EPS, Margins, D/E, MCap)
+  Refresh: weekly (financial data changes slowly)
 
-LAYER 2 — PER-TICKER (yfinance quarterly_income_stmt):
-    Fetches quarterly + annual financial statements per ticker
-    Fields: EPS, Revenue, Net Profit, Operating Income per quarter/year
-    Stored in: tv_fundamentals_detail SQLite table (24h cache)
-    Used by: Smart Metrics tab — full 14-criterion OM score
+LAYER 2 — PER-TICKER QUARTERLY (yfinance):
+  fetch_ticker_detail(tick)   → 5-quarter EPS/Revenue/Profit history
+  Stores: tv_fundamentals_detail table (24h cache)
+  Used by: Smart Metrics OM score, SMART Screener Pass 2
 
-Together replace ALL screener.in usage across the app.
+LAYER 3 — FAST RATIO ONLY (TV batch, no network):
+  get_screener_data_fast(tick) → instant from DB, ratios only
 """
 
 import sqlite3

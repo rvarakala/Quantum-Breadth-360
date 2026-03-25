@@ -1293,10 +1293,22 @@ async def startup_event():
     except Exception as _e:
         logger.warning(f"API key env load failed: {_e}")
 
-    # Ensure TradingView fundamentals tables exist
+    # Ensure TradingView fundamentals tables exist + auto-sync if stale
     try:
         ensure_tv_tables()
         logger.info("✅ TV fundamentals tables ready")
+        # Auto-refresh TV batch fundamentals if >24h stale or empty
+        if not is_batch_fresh(max_age_hours=24):
+            logger.info("⏳ TV fundamentals stale — auto-syncing in background...")
+            import asyncio as _aio
+            async def _auto_tv_sync():
+                await _aio.sleep(10)   # wait for server to finish starting
+                try:
+                    result = fetch_batch_fundamentals(market="india")
+                    logger.info(f"✅ Auto TV sync: {len(result)} tickers refreshed")
+                except Exception as _e:
+                    logger.warning(f"Auto TV sync failed: {_e}")
+            _aio.ensure_future(_auto_tv_sync())
     except Exception as e:
         logger.warning(f"TV fundamentals table init failed: {e}")
 

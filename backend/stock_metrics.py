@@ -313,7 +313,7 @@ def fetch_pe_ratio(ticker: str) -> float:
     """Fetch PE ratio from screener.in cache or fundamentals_sync."""
     # Try screener.in
     try:
-        from smart_metrics_service import fetch_screener_data
+        
         data = fetch_screener_data(ticker)
         if data and data.get("ratios"):
             for key in ["Stock P/E", "PE", "P/E"]:
