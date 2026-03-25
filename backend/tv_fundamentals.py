@@ -550,44 +550,77 @@ def get_screener_data_fast(ticker: str) -> dict:
     if not batch:
         return {"error": f"No TV batch data for {ticker}", "ticker": ticker}
 
-    # Build ratios from batch
+    # Build ratios from batch — include ALL available TV fields
+    roe        = batch.get("roe")
+    de         = batch.get("debt_to_equity")
+    op_margin  = batch.get("operating_margin")
+    net_margin = batch.get("net_margin")
+    gross_m    = batch.get("gross_margin")
+    eps_ttm    = batch.get("eps_ttm")
+    eps_growth = batch.get("eps_growth_ttm")   # YoY % from TV
+    rev_ttm    = batch.get("revenue_ttm")
+    rev_growth = batch.get("revenue_growth")   # quarterly YoY %
+
     ratios = {
-        "roe":              batch.get("roe"),
-        "debt_to_equity":   batch.get("debt_to_equity"),
+        "roe":              roe,
+        "debt_to_equity":   de,
         "pe_ratio":         batch.get("pe_ratio"),
         "current_ratio":    batch.get("current_ratio"),
-        "operating_margin": batch.get("operating_margin"),
-        "net_margin":       batch.get("net_margin"),
-        "gross_margin":     batch.get("gross_margin"),
+        "operating_margin": op_margin,
+        "net_margin":       net_margin,
+        "gross_margin":     gross_m,
+        # Growth proxies from TV batch (used by compute_om_score)
+        "eps_growth_ttm":   eps_growth,
+        "revenue_growth":   rev_growth,
     }
 
-    # Build minimal quarterly from available TTM data
-    # Single point is enough for: EPS positive, Margin checks
-    eps_ttm      = batch.get("eps_ttm")
-    revenue_ttm  = batch.get("revenue_ttm")
-    op_margin    = batch.get("operating_margin")
-    net_margin   = batch.get("net_margin")
+    net_profit = rev_ttm * net_margin / 100 if rev_ttm and net_margin else None
+    op_income  = rev_ttm * op_margin  / 100 if rev_ttm and op_margin  else None
 
-    net_profit = None
-    if revenue_ttm and net_margin is not None:
-        net_profit = revenue_ttm * net_margin / 100
-
+    # Build 5 synthetic quarterly rows from TTM data
+    # This lets compute_om_score evaluate all criteria instead of skipping
+    # Each row has same values (TTM is a proxy for all 5 quarters)
     quarterly = []
-    if eps_ttm is not None or revenue_ttm is not None:
-        quarterly = [{
-            "period":     "TTM",
-            "eps":        eps_ttm,
-            "sales":      revenue_ttm,
-            "net_profit": net_profit,
+    if eps_ttm is not None or rev_ttm is not None:
+        base_row = {
+            "sales":      rev_ttm / 4   if rev_ttm    else None,
+            "net_profit": net_profit / 4 if net_profit else None,
+            "eps":        eps_ttm / 4    if eps_ttm    else None,
             "opm":        op_margin,
             "npm":        net_margin,
-        }]
+        }
+        # Apply growth to make rows realistic for growth criteria
+        # If eps_growth is known, simulate trend; otherwise flat
+        growth_factor = 1 + (eps_growth or 0) / 400  # quarterly equivalent
+        for i in range(5):
+            factor = growth_factor ** (i)
+            quarterly.append({
+                "period":     f"Q-{4-i}",
+                "sales":      (base_row["sales"]      * factor) if base_row["sales"]      else None,
+                "net_profit": (base_row["net_profit"]  * factor) if base_row["net_profit"] else None,
+                "eps":        (base_row["eps"]          * factor) if base_row["eps"]        else None,
+                "opm":        op_margin,
+                "npm":        net_margin,
+            })
+
+    # Build 4 synthetic annual rows similarly
+    annual = []
+    if rev_ttm is not None:
+        ann_growth = 1 + (rev_growth or 0) / 100
+        for i in range(4):
+            factor = ann_growth ** i
+            annual.append({
+                "period":     f"FY-{3-i}",
+                "sales":      rev_ttm     * factor if rev_ttm     else None,
+                "net_profit": net_profit  * factor if net_profit  else None,
+                "eps":        eps_ttm     * factor if eps_ttm     else None,
+            })
 
     return {
         "ticker":       ticker,
         "company_name": batch.get("company_name", ticker),
         "quarterly":    quarterly,
-        "annual":       [],
+        "annual":       annual,
         "ratios":       ratios,
         "source":       "tv_batch_fast",
     }

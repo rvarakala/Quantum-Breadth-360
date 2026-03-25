@@ -800,89 +800,107 @@ def run_smart_screener(
     if not tickers_with_data:
         return {"error": "No OHLCV data found — run a sync first", "stocks": [], "total": 0}
 
-    # ── Compute lightweight pre-filter metrics for all tickers ─────────────────
-    candidates = []
-    total_tickers = len(tickers_with_data)
-
+    # ── Pass 1: Pre-filter using vectorised SQL + numpy — no Python loops ───────
     if progress_state:
-        progress_state["message"] = f"Pass 1: Scanning {total_tickers} tickers..."
-        progress_state["total"] = total_tickers
+        progress_state["message"] = "Pass 1: Scanning universe (vectorised)..."
+        progress_state["progress"] = 0
+        progress_state["total"]    = 10
+
+    import numpy as _np
 
     conn = sqlite3.connect(str(DB_PATH), timeout=30)
 
-    for i, ticker in enumerate(tickers_with_data):
-        if progress_state and i % 100 == 0:
-            progress_state["progress"] = i
-            progress_state["message"] = f"Pass 1: {i}/{total_tickers} scanned, {len(candidates)} found..."
+    # Load all OHLCV data for all tickers in ONE SQL call
+    # Only last 260 rows per ticker — enough for all MA calculations
+    if progress_state:
+        progress_state["message"] = "Pass 1: Loading OHLCV data..."
 
+    df_raw = conn.execute("""
+        SELECT ticker, date, close, high, low, volume
+        FROM (
+            SELECT ticker, date, close, high, low, volume,
+                   ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY date DESC) as rn
+            FROM ohlcv WHERE market = 'India'
+        )
+        WHERE rn <= 260
+        ORDER BY ticker, date ASC
+    """).fetchall()
+    conn.close()
+
+    if progress_state:
+        progress_state["message"] = "Pass 1: Computing filters..."
+        progress_state["progress"] = 5
+
+    # Group by ticker using dict
+    from collections import defaultdict
+    ticker_rows = defaultdict(list)
+    for ticker, date, close, high, low, volume in df_raw:
+        ticker_rows[ticker].append((close, high, low, volume))
+
+    candidates = []
+    total_tickers = len(ticker_rows)
+
+    for ticker, rows in ticker_rows.items():
         try:
-            rows = conn.execute("""
-                SELECT close, high, low, volume
-                FROM ohlcv WHERE ticker=? AND market='India'
-                ORDER BY date DESC LIMIT 260
-            """, (ticker,)).fetchall()
-
             if len(rows) < 63:
                 continue
 
-            closes = [r[0] for r in reversed(rows)]
-            highs  = [r[1] for r in reversed(rows)]
-            lows   = [r[2] for r in reversed(rows)]
-            vols   = [r[3] for r in reversed(rows)]
-            price  = closes[-1]
+            closes = _np.array([r[0] for r in rows], dtype=_np.float64)
+            highs  = _np.array([r[1] for r in rows], dtype=_np.float64)
+            vols   = _np.array([r[3] for r in rows], dtype=_np.float64)
 
+            price = closes[-1]
             if not price or price <= 5:
                 continue
 
-            # ── STRICT pre-filter — only ~50-80 stocks should pass ────────────
-
-            # 1. Stage 2: price > MA50 > MA150 > MA200 (strict — all 3 MAs)
+            # Stage 2 check
             if len(closes) < 200:
                 continue
-            ma50  = sum(closes[-50:]) / 50
-            ma150 = sum(closes[-150:]) / 150
-            ma200 = sum(closes[-200:]) / 200
-            is_stage2 = price > ma50 > ma150 > ma200
+            ma50  = _np.mean(closes[-50:])
+            ma150 = _np.mean(closes[-150:])
+            ma200 = _np.mean(closes[-200:])
+            is_stage2 = bool(price > ma50 > ma150 > ma200)
             if require_stage2 and not is_stage2:
                 continue
 
-            # 2. RS proxy — strict: must beat min_rs threshold
-            roc_3m = ((closes[-1] / closes[-63]) - 1) * 100
-            roc_6m = ((closes[-1] / closes[-126]) - 1) * 100 if len(closes) >= 126 else roc_3m
-            rs_proxy = round(roc_3m * 0.6 + roc_6m * 0.4)
-            if rs_proxy < min_rs - 10:   # allow 10pt buffer for M2M3 vs proxy diff
+            # RS proxy
+            roc_3m = (closes[-1] / closes[-63] - 1) * 100
+            roc_6m = (closes[-1] / closes[-126] - 1) * 100 if len(closes) >= 126 else roc_3m
+            rs_proxy = float(roc_3m * 0.6 + roc_6m * 0.4)
+            if rs_proxy < min_rs - 10:
                 continue
 
-            # 3. Price not more than 25% below 52W high (momentum filter)
-            hi52 = max(highs[-252:]) if len(highs) >= 252 else max(highs)
+            # From 52W high
+            hi52 = float(_np.max(highs[-252:])) if len(highs) >= 252 else float(_np.max(highs))
             pct_from_high = round((price - hi52) / hi52 * 100, 1) if hi52 > 0 else -99
             if pct_from_high < -30:
                 continue
 
-            # 4. Liquidity: avg daily volume × price > ₹2Cr turnover
-            avg_vol = sum(vols[-20:]) / 20 if len(vols) >= 20 else 0
+            # Liquidity
+            avg_vol = float(_np.mean(vols[-20:])) if len(vols) >= 20 else 0
             if avg_vol * price < 2_000_000:
                 continue
 
-            # 5. MA200 rising (not declining): must be above 60-day ago value
+            # MA200 rising
             if len(closes) >= 260:
-                ma200_60d_ago = sum(closes[-260:-60]) / 200
-                if ma200 < ma200_60d_ago * 0.98:   # declining MA200 → skip
+                ma200_60d = float(_np.mean(closes[-260:-60]))
+                if ma200 < ma200_60d * 0.98:
                     continue
 
             candidates.append({
                 "ticker":        ticker,
-                "price":         round(price, 2),
+                "price":         round(float(price), 2),
                 "is_stage2":     is_stage2,
-                "rs_proxy":      rs_proxy,
+                "rs_proxy":      round(rs_proxy, 1),
                 "pct_from_high": pct_from_high,
                 "avg_vol":       int(avg_vol),
             })
-
         except Exception:
             continue
 
-    conn.close()
+    if progress_state:
+        progress_state["progress"] = 10
+        progress_state["message"]  = f"Pass 1: {len(candidates)} candidates from {total_tickers} tickers"
 
     if not candidates:
         return {
@@ -914,21 +932,17 @@ def run_smart_screener(
     _results_lock = _threading.Lock()
 
     def _score_one(cand):
-        """Score a single candidate.
-        Fundamentals: yfinance quarterly statements (cached 24h in tv_fundamentals_detail)
-        Technicals:   local DB computation (no network)
+        """Score a single candidate — pure DB reads, no network.
+        Fundamentals: TV batch DB (tv_fundamentals table) — instant
+        Technicals:   OHLCV DB computation — no network
         """
         ticker = cand["ticker"]
         try:
-            # ── Fundamentals: yfinance quarterly (cached 24h) ─────────────────
-            # fetch_ticker_detail uses: cache → yfinance quarterly_income_stmt
-            #   → TV batch fallback (ratios only if yfinance fails)
-            # Screener.in is NOT in this chain anymore
+            # ── Fundamentals: TV batch DB — instant, no network ───────────────
             try:
-                from tv_fundamentals import fetch_ticker_detail
-                screener_data = fetch_ticker_detail(ticker)
+                from tv_fundamentals import get_screener_data_fast
+                screener_data = get_screener_data_fast(ticker)
             except ImportError:
-                # Should never happen — tv_fundamentals.py is always present
                 screener_data = {"error": "tv_fundamentals not available", "ticker": ticker}
             om    = compute_om_score(screener_data)
             tech  = compute_technicals(ticker)
@@ -973,11 +987,11 @@ def run_smart_screener(
             logger.debug(f"SMART score failed {ticker}: {e}")
             return None
 
-    # 3 parallel workers — polite to screener.in (cached hits are instant)
+    # 8 parallel workers — pure DB reads, safe to parallelise
     total_cands = len(candidates)
     done_count  = [0]
 
-    with _TPE(max_workers=3) as pool:
+    with _TPE(max_workers=8) as pool:  # all DB reads — safe to parallelise
         futures = {pool.submit(_score_one, c): c for c in candidates}
         for future in _ac(futures):
             done_count[0] += 1

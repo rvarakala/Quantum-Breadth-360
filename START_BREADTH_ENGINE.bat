@@ -1,75 +1,68 @@
 @echo off
 setlocal enabledelayedexpansion
-title Quantum Breadth 360 — Backend Server
+title Quantum Breadth 360
 color 0A
 
 echo.
-echo  ██████╗ ██╗   ██╗ █████╗ ███╗   ██╗████████╗██╗   ██╗███╗   ███╗
-echo ██╔═══██╗██║   ██║██╔══██╗████╗  ██║╚══██╔══╝██║   ██║████╗ ████║
-echo ██║   ██║██║   ██║███████║██╔██╗ ██║   ██║   ██║   ██║██╔████╔██║
-echo ██║▄▄ ██║██║   ██║██╔══██║██║╚██╗██║   ██║   ██║   ██║██║╚██╔╝██║
-echo ╚██████╔╝╚██████╔╝██║  ██║██║ ╚████║   ██║   ╚██████╔╝██║ ╚═╝ ██║
-echo  ╚══▀▀═╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝   ╚═╝    ╚═════╝ ╚═╝     ╚═╝
+echo  ██████╗ ██████╗ ███████╗ █████╗ ██████╗ ████████╗██╗  ██╗
+echo  ██╔══██╗██╔══██╗██╔════╝██╔══██╗██╔══██╗╚══██╔══╝██║  ██║
+echo  ██████╔╝██████╔╝█████╗  ███████║██║  ██║   ██║   ███████║
+echo  ██╔══██╗██╔══██╗██╔══╝  ██╔══██║██║  ██║   ██║   ██╔══██║
+echo  ██████╔╝██║  ██║███████╗██║  ██║██████╔╝   ██║   ██║  ██║
+echo  ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═════╝    ╚═╝   ╚═╝  ╚═╝
 echo.
-echo  BREADTH 360  ^^^|  Market Intelligence Platform  ^^^|  localhost:8001
-echo  ═══════════════════════════════════════════════════════════════════
+echo   360  ^|  Market Intelligence Platform  ^|  localhost:8001
+echo  ═══════════════════════════════════════════════════════════
 echo.
 
-:: ── Set working directory to script location ─────────────────────────────────
 cd /d "%~dp0backend"
 
-:: ── Create .env from template if not exists ───────────────────────────────────
+:: Create .env from template if missing
 if not exist ".env" (
     if exist ".env.example" (
         copy ".env.example" ".env" >nul
-        echo  [SETUP] .env created from template
-        echo  [SETUP] Edit .env to add your GROQ_API_KEY for AI features
+        echo  [SETUP] .env created — edit it to add your GROQ_API_KEY
         echo.
     )
 )
 
-:: ── Create venv if not exists ─────────────────────────────────────────────────
+:: Create venv on first run
 if not exist "venv\Scripts\activate.bat" (
-    echo  [SETUP] Creating virtual environment...
+    echo  [SETUP] First-time setup: creating virtual environment...
     python -m venv venv
-    if errorlevel 1 (
-        echo  [ERROR] Failed to create venv. Is Python installed?
-        echo  [ERROR] Download Python 3.11+ from python.org
-        pause
-        exit /b 1
-    )
-    echo  [SETUP] Installing dependencies ^(first time — takes 2-3 min^)...
+    if errorlevel 1 ( echo  [ERROR] Python not found. Download from python.org & pause & exit /b 1 )
+    echo  [SETUP] Installing packages (2-3 min first time)...
     call venv\Scripts\pip install -r requirements.txt --quiet
-    if errorlevel 1 (
-        echo  [ERROR] pip install failed. Check requirements.txt
-        pause
-        exit /b 1
-    )
-    echo  [SETUP] Setup complete!
+    echo  [SETUP] Done!
     echo.
 )
 
-:: ── Activate venv ─────────────────────────────────────────────────────────────
 call venv\Scripts\activate.bat
 
-:: ── Kill anything on port 8001 ────────────────────────────────────────────────
-echo  [START] Checking port 8001...
+:: Kill anything on port 8001
 for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":8001 "') do (
     taskkill /PID %%a /F >nul 2>&1
 )
 
-:: ── Start backend ─────────────────────────────────────────────────────────────
-echo  [START] Launching Quantum Breadth 360...
-echo  [START] Open browser ^-^> http://localhost:8001
-echo.
-echo  ─────────────────────────────────────────────
-echo   Press Ctrl+C to stop the server
-echo  ─────────────────────────────────────────────
-echo.
+:: Start backend
+echo  [START] Starting Quantum Breadth 360...
+start /min "QB360-Backend" cmd /c "cd /d "%~dp0backend" && call venv\Scripts\activate.bat && python main.py"
 
-python main.py
+:: Wait for server to be ready
+echo  [START] Waiting for server...
+timeout /t 4 /nobreak >nul
 
-:: ── On exit ───────────────────────────────────────────────────────────────────
+:: Open browser
+echo  [START] Opening browser → http://localhost:8001
+start "" "http://localhost:8001"
+
 echo.
-echo  [STOP] Server stopped.
+echo  ────────────────────────────────────────
+echo   Quantum Breadth 360 is running!
+echo   Dashboard: http://localhost:8001
+echo   Server:    Running in background
+echo.
+echo   To stop: close the QB360-Backend window
+echo  ────────────────────────────────────────
+echo.
 pause
