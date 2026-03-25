@@ -988,8 +988,12 @@ def get_smart_metrics(ticker: str) -> dict:
     ticker = ticker.upper().strip()
     t0 = time.time()
 
-    # 1. Fetch screener.in fundamentals
-    screener_data = fetch_screener_data(ticker)
+    # 1. Fetch fundamentals from TradingView (replaces screener.in)
+    try:
+        from tv_fundamentals import fetch_ticker_detail
+        screener_data = fetch_ticker_detail(ticker)
+    except ImportError:
+        screener_data = fetch_screener_data(ticker)   # legacy fallback
 
     # 2. Compute OM Score
     om = compute_om_score(screener_data)
@@ -1237,8 +1241,12 @@ def run_smart_screener(
         """Score a single candidate — runs in thread pool."""
         ticker = cand["ticker"]
         try:
-            # Fundamentals from screener.in (cached 24h — no re-scrape if fresh)
-            screener_data = fetch_screener_data(ticker)
+            # Fundamentals from TradingView (cached 24h)
+            try:
+                from tv_fundamentals import fetch_ticker_detail
+                screener_data = fetch_ticker_detail(ticker)
+            except ImportError:
+                screener_data = fetch_screener_data(ticker)   # legacy fallback
             om    = compute_om_score(screener_data)
             tech  = compute_technicals(ticker)
             smart = compute_smart_score(om, tech)

@@ -61,6 +61,10 @@ from watchlist import (
     get_watchlist_data, create_alert, list_alerts, delete_alert, check_alerts,
 )
 from email_digest import generate_market_summary, generate_summary_html
+from tv_fundamentals import (
+    fetch_batch_fundamentals, get_batch_fundamental,
+    is_batch_fresh, _ensure_tables as ensure_tv_tables,
+)
 from ai_insights import (
     get_market_intelligence, get_stock_analysis,
     save_api_key, validate_api_key, _get_api_key,
@@ -1144,6 +1148,54 @@ async def get_score_history(market: str = "INDIA", days: int = 30):
     except Exception as e:
         return {"error": str(e), "history": []}
 
+
+# ── TradingView Fundamentals Batch Sync ───────────────────────────────────────
+
+_tv_fund_state: dict = {"running": False, "message": "Idle", "count": 0}
+
+@app.post("/api/fundamentals/tv-sync")
+async def tv_fundamentals_sync(background_tasks: BackgroundTasks):
+    """
+    Fetch fundamental summary for ALL NSE stocks from TradingView in one call.
+    Stores PE, ROE, EPS, Margins, D/E for every stock in tv_fundamentals table.
+    Takes ~5-10 seconds. Run once daily (auto-stale after 24h).
+    """
+    if _tv_fund_state["running"]:
+        return {"message": "Sync already running", **_tv_fund_state}
+
+    def _run():
+        _tv_fund_state["running"] = True
+        _tv_fund_state["message"] = "Fetching from TradingView..."
+        try:
+            result = fetch_batch_fundamentals(market="india")
+            count = len(result)
+            _tv_fund_state["count"]   = count
+            _tv_fund_state["message"] = f"✅ {count} stocks synced from TradingView"
+        except Exception as e:
+            _tv_fund_state["message"] = f"Error: {e}"
+        finally:
+            _tv_fund_state["running"] = False
+
+    background_tasks.add_task(_run)
+    return {"message": "TradingView fundamentals sync started (~5-10 seconds)"}
+
+
+@app.get("/api/fundamentals/tv-sync/status")
+def tv_fundamentals_status():
+    fresh = is_batch_fresh(max_age_hours=24)
+    return {**_tv_fund_state, "fresh": fresh}
+
+
+@app.get("/api/fundamentals/tv/{ticker}")
+async def tv_fundamental_detail(ticker: str):
+    """Get fundamental detail for one ticker from TradingView (cached 24h)."""
+    from tv_fundamentals import fetch_ticker_detail
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        executor, fetch_ticker_detail, ticker.upper()
+    )
+    return result
+
 # ── Startup: load disk cache + pre-warm breadth in background ───────────────
 @app.on_event("startup")
 async def startup_event():
@@ -1172,6 +1224,13 @@ async def startup_event():
             _conn.close()
     except Exception as _e:
         logger.warning(f"API key env load failed: {_e}")
+
+    # Ensure TradingView fundamentals tables exist
+    try:
+        ensure_tv_tables()
+        logger.info("✅ TV fundamentals tables ready")
+    except Exception as e:
+        logger.warning(f"TV fundamentals table init failed: {e}")
 
     # Ensure NSE index tables exist
     try:

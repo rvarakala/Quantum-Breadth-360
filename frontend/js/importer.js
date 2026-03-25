@@ -531,3 +531,43 @@ async function _loadNseUniverseStats() {
     }
   } catch(e) { /* silent */ }
 }
+
+
+// ── TV Fundamentals Sync ──────────────────────────────────────────────────────
+async function syncTvFundamentals() {
+  const btn     = document.getElementById('tv-fund-btn');
+  const progress = document.getElementById('nse-sync-status');
+  const msgEl   = document.getElementById('nse-sync-msg');
+  const barEl   = document.getElementById('nse-sync-bar');
+
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Syncing...'; }
+  if (progress) progress.style.display = 'block';
+  if (msgEl) msgEl.textContent = 'Fetching fundamentals from TradingView...';
+  if (barEl) { barEl.style.width = '0%'; barEl.style.background = '#7c3aed'; }
+
+  try {
+    await fetch(`${API}/api/fundamentals/tv-sync`, { method: 'POST' });
+  } catch(e) {
+    if (msgEl) msgEl.textContent = 'Failed: ' + e.message;
+    if (btn) { btn.disabled = false; btn.textContent = '🧠 TV Fundamentals'; }
+    return;
+  }
+
+  // Poll — usually completes in ~10s
+  const poll = setInterval(async () => {
+    try {
+      const res = await fetch(`${API}/api/fundamentals/tv-sync/status`);
+      const s   = await res.json();
+      if (msgEl) msgEl.textContent = s.message || 'Syncing...';
+      if (!s.running) {
+        clearInterval(poll);
+        if (barEl) { barEl.style.width = '100%'; barEl.style.background = '#22c55e'; }
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = `✓ ${s.count || '?'} stocks`;
+          setTimeout(() => { btn.textContent = '🧠 TV Fundamentals'; }, 4000);
+        }
+      }
+    } catch(e) {}
+  }, 1500);
+}

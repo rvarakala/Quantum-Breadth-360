@@ -267,47 +267,37 @@ def _compute_avg_turnover(df: pd.DataFrame) -> float:
 
 
 def fetch_eps_yahoo(ticker: str) -> tuple:
-    """Fetch EPS (TTM) and PE from screener.in cache or fresh scrape. Returns (eps_value, status)."""
-    # Try screener.in cache first (same data as Smart Metrics)
+    """Fetch EPS (TTM) and PE. Tries TradingView batch first, then per-ticker, then yfinance."""
+    # ── 1. Try TradingView batch data (instant, no network call) ──────────────
     try:
-        from smart_metrics_service import fetch_screener_data
-        data = fetch_screener_data(ticker)
-        if data and data.get("ratios"):
-            ratios = data["ratios"]
-            # Get EPS from quarterly data (latest quarter)
-            eps = None
+        from tv_fundamentals import get_batch_fundamental
+        batch = get_batch_fundamental(ticker)
+        if batch and batch.get("eps_ttm") is not None:
+            eps = batch["eps_ttm"]
+            return round(eps, 2), "Positive" if eps > 0 else "Negative"
+    except Exception as e:
+        logger.debug(f"TV batch EPS failed for {ticker}: {e}")
+
+    # ── 2. Try TradingView per-ticker detail (cached 24h) ─────────────────────
+    try:
+        from tv_fundamentals import fetch_ticker_detail
+        data = fetch_ticker_detail(ticker)
+        if data and not data.get("error"):
             quarterly = data.get("quarterly", [])
             if quarterly:
-                # Find EPS row
-                for row in quarterly:
-                    if row.get("label", "").lower().startswith("eps"):
-                        vals = row.get("values", [])
-                        if vals:
-                            try: eps = float(vals[-1].replace(",", ""))
-                            except: pass
-                        break
-            
-            # Fallback: compute from PE and price
-            pe_str = ratios.get("Stock P/E") or ratios.get("PE")
-            pe = None
-            if pe_str:
-                try: pe = float(str(pe_str).replace(",", ""))
-                except: pass
-            
-            if eps is None and pe and pe > 0:
-                price_str = ratios.get("Current Price", "0")
+                eps = quarterly[-1].get("eps")
+                if eps is not None:
+                    return round(eps, 2), "Positive" if eps > 0 else "Negative"
+            ratios = data.get("ratios", {})
+            if ratios.get("pe_ratio") and data.get("price"):
                 try:
-                    price = float(str(price_str).replace(",", "").replace("₹", ""))
-                    eps = round(price / pe, 2)
+                    eps = round(float(data["price"]) / float(ratios["pe_ratio"]), 2)
+                    return eps, "Positive" if eps > 0 else "Negative"
                 except: pass
-            
-            if eps is not None:
-                status = "Positive" if eps > 0 else "Negative"
-                return round(eps, 2), status
     except Exception as e:
-        logger.debug(f"Screener.in EPS failed for {ticker}: {e}")
-    
-    # Fallback: try fundamentals_sync cache
+        logger.debug(f"TV detail EPS failed for {ticker}: {e}")
+
+    # ── 3. Fallback: yfinance cache ───────────────────────────────────────────
     try:
         from fundamentals_sync import get_eps_for_ticker
         cached = get_eps_for_ticker(ticker)
@@ -315,7 +305,7 @@ def fetch_eps_yahoo(ticker: str) -> tuple:
             eps = cached["eps_ttm"]
             return round(eps, 2), "Positive" if eps > 0 else "Negative"
     except: pass
-    
+
     return None, "N/A"
 
 
