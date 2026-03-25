@@ -79,100 +79,179 @@ def _fetch_fundamentals_v8(ticker):
 
 def sync_fundamentals(tickers=None, max_workers=3, progress_state=None):
     """
-    Fetch EPS, PE, market cap for tickers and store in DB.
-    If tickers is None, fetches for all tickers missing EPS data.
+    Sync EPS, PE, market cap fundamentals.
+    Strategy:
+      1. Try TradingView batch (one call, all NSE stocks, ~10 seconds) 
+      2. Fall back to yfinance per-ticker only if TV batch fails
     """
     _ensure_columns()
-    
+
+    # ── Try TV batch first ─────────────────────────────────────────────────────
+    if progress_state:
+        progress_state["total"]    = 1
+        progress_state["progress"] = 0
+        progress_state["message"]  = "Fetching fundamentals via TradingView batch..."
+
+    try:
+        from tv_fundamentals import fetch_batch_fundamentals, _ensure_tables as _tv_ensure
+        _tv_ensure()
+        tv_data = fetch_batch_fundamentals(market="india")
+
+        if tv_data and len(tv_data) > 100:
+            # TV batch succeeded — write to market_cap table too
+            # so all existing code that reads market_cap still works
+            conn = sqlite3.connect(str(DB_PATH), timeout=30)
+            updated = 0
+            for ticker, d in tv_data.items():
+                pe   = d.get("pe_ratio")
+                eps  = d.get("eps_ttm")
+                mcap = d.get("market_cap")   # already in native currency units from TV
+                name = d.get("company_name") or ticker
+                ind  = d.get("industry") or ""
+
+                # Convert TV market_cap to Crores (TV returns in native currency)
+                mcap_cr = None
+                tier    = "Unknown"
+                if mcap and mcap > 0:
+                    # TV returns market cap in INR (for NSE)
+                    mcap_cr = mcap / 10_000_000   # INR → Crores
+                    if mcap_cr >= 100_000: tier = "Mega Cap"
+                    elif mcap_cr >= 20_000: tier = "Large Cap"
+                    elif mcap_cr >= 5_000:  tier = "Mid Cap"
+                    elif mcap_cr >= 500:    tier = "Small Cap"
+                    else:                   tier = "Micro Cap"
+
+                try:
+                    conn.execute("""
+                        INSERT INTO market_cap
+                            (ticker, company_name, mcap_cr, mcap_tier,
+                             eps_ttm, pe_ratio, industry, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        ON CONFLICT(ticker) DO UPDATE SET
+                            eps_ttm      = COALESCE(excluded.eps_ttm, market_cap.eps_ttm),
+                            pe_ratio     = COALESCE(excluded.pe_ratio, market_cap.pe_ratio),
+                            industry     = COALESCE(excluded.industry, market_cap.industry),
+                            company_name = COALESCE(excluded.company_name, market_cap.company_name),
+                            mcap_cr      = CASE WHEN excluded.mcap_cr > 0
+                                                THEN excluded.mcap_cr
+                                                ELSE market_cap.mcap_cr END,
+                            mcap_tier    = CASE WHEN excluded.mcap_tier != 'Unknown'
+                                                THEN excluded.mcap_tier
+                                                ELSE market_cap.mcap_tier END,
+                            updated_at   = CURRENT_TIMESTAMP
+                    """, (ticker, name, mcap_cr, tier, eps, pe, ind))
+                    updated += 1
+                except Exception as e:
+                    logger.debug(f"market_cap upsert failed {ticker}: {e}")
+
+            conn.commit()
+            conn.close()
+
+            msg = f"✅ TV batch: {updated}/{len(tv_data)} tickers synced (EPS/PE/MCap)"
+            if progress_state:
+                progress_state["message"]  = msg
+                progress_state["progress"] = 1
+                progress_state["total"]    = 1
+            logger.info(msg)
+            return {"message": msg, "updated": updated, "failed": 0,
+                    "total": len(tv_data), "source": "tradingview_batch"}
+
+    except Exception as e:
+        logger.warning(f"TV batch failed ({e}) — falling back to yfinance per-ticker")
+
+    # ── Fallback: yfinance per-ticker ─────────────────────────────────────────
+    logger.info("Falling back to yfinance per-ticker fundamentals sync...")
+
     conn = sqlite3.connect(str(DB_PATH), timeout=30)
-    
     if tickers is None:
-        # Get all OHLCV tickers missing fundamentals
         rows = conn.execute("""
             SELECT DISTINCT o.ticker FROM ohlcv o
             LEFT JOIN market_cap m ON o.ticker = m.ticker
             WHERE o.market = 'India'
-            AND (m.ticker IS NULL OR m.eps_ttm IS NULL)
+              AND (m.ticker IS NULL OR m.eps_ttm IS NULL)
         """).fetchall()
         tickers = [r[0] for r in rows]
-    
     conn.close()
-    
+
     total = len(tickers)
     if total == 0:
         return {"message": "All tickers already have fundamentals", "updated": 0}
-    
-    logger.info(f"Fetching fundamentals for {total} tickers...")
-    
+
+    logger.info(f"yfinance fallback: {total} tickers...")
     if progress_state:
-        progress_state["total"] = total
+        progress_state["total"]    = total
         progress_state["progress"] = 0
-        progress_state["message"] = f"Fetching fundamentals for {total} tickers..."
-    
+        progress_state["message"]  = f"yfinance fallback: {total} tickers..."
+
     updated = 0
-    failed = 0
-    
+    failed  = 0
+
     for batch_start in range(0, total, max_workers):
         batch = tickers[batch_start:batch_start + max_workers]
-        
+
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             futures = {pool.submit(_fetch_fundamentals_yf, t): t for t in batch}
             for future in as_completed(futures):
                 ticker = futures[future]
                 result = future.result()
-                
-                if result and (result.get("eps_ttm") is not None or result.get("mcap") is not None):
+
+                if result and (result.get("eps_ttm") is not None
+                               or result.get("mcap") is not None):
                     conn = sqlite3.connect(str(DB_PATH), timeout=30)
-                    mcap_cr = result["mcap"] / 10000000 if result.get("mcap") else None  # INR to Crores
+                    mcap_cr = result["mcap"] / 10_000_000 if result.get("mcap") else None
                     tier = "Unknown"
                     if mcap_cr:
-                        if mcap_cr >= 100000: tier = "Mega Cap"
-                        elif mcap_cr >= 20000: tier = "Large Cap"
-                        elif mcap_cr >= 5000: tier = "Mid Cap"
-                        elif mcap_cr >= 500: tier = "Small Cap"
-                        else: tier = "Micro Cap"
-                    
+                        if mcap_cr >= 100_000: tier = "Mega Cap"
+                        elif mcap_cr >= 20_000: tier = "Large Cap"
+                        elif mcap_cr >= 5_000:  tier = "Mid Cap"
+                        elif mcap_cr >= 500:    tier = "Small Cap"
+                        else:                   tier = "Micro Cap"
                     conn.execute("""
-                        INSERT INTO market_cap (ticker, company_name, mcap_cr, mcap_tier, eps_ttm, pe_ratio, industry, yf_mcap, updated_at)
-                        VALUES (?, ?, COALESCE(?, (SELECT mcap_cr FROM market_cap WHERE ticker=?)), 
-                                COALESCE(?, (SELECT mcap_tier FROM market_cap WHERE ticker=?)),
-                                ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        INSERT INTO market_cap
+                            (ticker, company_name, mcap_cr, mcap_tier,
+                             eps_ttm, pe_ratio, industry, yf_mcap, updated_at)
+                        VALUES (?,?,COALESCE(?,(SELECT mcap_cr FROM market_cap WHERE ticker=?)),
+                                COALESCE(?,(SELECT mcap_tier FROM market_cap WHERE ticker=?)),
+                                ?,?,?,?,CURRENT_TIMESTAMP)
                         ON CONFLICT(ticker) DO UPDATE SET
-                            eps_ttm = COALESCE(excluded.eps_ttm, market_cap.eps_ttm),
-                            pe_ratio = COALESCE(excluded.pe_ratio, market_cap.pe_ratio),
-                            industry = COALESCE(excluded.industry, market_cap.industry),
-                            yf_mcap = excluded.yf_mcap,
-                            mcap_cr = CASE WHEN excluded.mcap_cr > 0 THEN excluded.mcap_cr ELSE market_cap.mcap_cr END,
-                            mcap_tier = CASE WHEN excluded.mcap_tier != 'Unknown' THEN excluded.mcap_tier ELSE market_cap.mcap_tier END,
-                            company_name = COALESCE(excluded.company_name, market_cap.company_name),
-                            updated_at = CURRENT_TIMESTAMP
+                            eps_ttm      = COALESCE(excluded.eps_ttm, market_cap.eps_ttm),
+                            pe_ratio     = COALESCE(excluded.pe_ratio, market_cap.pe_ratio),
+                            industry     = COALESCE(excluded.industry, market_cap.industry),
+                            yf_mcap      = excluded.yf_mcap,
+                            mcap_cr      = CASE WHEN excluded.mcap_cr > 0
+                                                THEN excluded.mcap_cr
+                                                ELSE market_cap.mcap_cr END,
+                            mcap_tier    = CASE WHEN excluded.mcap_tier != 'Unknown'
+                                                THEN excluded.mcap_tier
+                                                ELSE market_cap.mcap_tier END,
+                            company_name = COALESCE(excluded.company_name,
+                                                    market_cap.company_name),
+                            updated_at   = CURRENT_TIMESTAMP
                     """, (ticker, result.get("name"), mcap_cr, ticker, tier, ticker,
-                          result.get("eps_ttm"), result.get("pe_ratio"), result.get("industry"), 
-                          result.get("mcap")))
+                          result.get("eps_ttm"), result.get("pe_ratio"),
+                          result.get("industry"), result.get("mcap")))
                     conn.commit()
                     conn.close()
                     updated += 1
                 else:
                     failed += 1
-                
+
                 done = updated + failed
                 if progress_state:
                     progress_state["progress"] = done
-                    progress_state["message"] = f"Fundamentals: {done}/{total} ({ticker})"
-                
+                    progress_state["message"] = (
+                        f"Fundamentals: {done}/{total} ({ticker}) "
+                        f"— {updated} ok, {failed} failed"
+                    )
                 if done % 50 == 0:
-                    logger.info(f"Fundamentals: {done}/{total} ({updated} ok, {failed} failed)")
-        
-        time.sleep(1)  # Rate limit between batches
-    
-    result = {
-        "message": f"Fundamentals sync: {updated} updated, {failed} failed",
-        "updated": updated,
-        "failed": failed,
-        "total": total,
-    }
-    logger.info(result["message"])
-    return result
+                    logger.info(
+                        f"Fundamentals: {done}/{total} ({updated} ok, {failed} failed)"
+                    )
+        time.sleep(1)
+
+    msg = f"Fundamentals sync: {updated} updated, {failed} failed"
+    logger.info(msg)
+    return {"message": msg, "updated": updated, "failed": failed, "total": total}
 
 
 def get_eps_for_ticker(ticker):
