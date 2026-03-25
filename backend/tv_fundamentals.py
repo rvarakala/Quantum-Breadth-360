@@ -77,19 +77,18 @@ TV_FIELDS = [
     'name',
     'close',
     'market_cap_basic',
-    'price_earnings_ttm',
-    'price_book_fq',
-    'return_on_equity',
-    'return_on_assets',
-    'gross_margin',
-    'operating_margin',
-    'net_margin',
-    'debt_to_equity',
-    'current_ratio',
-    'earnings_per_share_basic_ttm',
-    'earnings_per_share_basic_yoy_growth_fy',
-    'total_revenue',
-    'revenue_growth_quarterly_yoy',
+    'price_earnings_ttm',        # PE TTM
+    'price_book_fq',             # P/B
+    'return_on_equity',          # ROE %
+    'return_on_assets',          # ROA %
+    'gross_margin',              # Gross Margin %
+    'operating_margin',          # OPM %
+    'net_margin',                # NPM %
+    'debt_to_equity',            # D/E
+    'current_ratio',             # Current Ratio
+    'earnings_per_share_basic_ttm',  # EPS TTM
+    'earnings_per_share_diluted_ttm',# EPS Diluted TTM
+    'total_revenue',             # Revenue TTM
     'sector',
     'industry',
     'description',
