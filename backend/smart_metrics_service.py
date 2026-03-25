@@ -1131,66 +1131,72 @@ def run_smart_screener(
     conn = sqlite3.connect(str(DB_PATH), timeout=30)
 
     for i, ticker in enumerate(tickers_with_data):
-        if progress_state and i % 50 == 0:
+        if progress_state and i % 100 == 0:
             progress_state["progress"] = i
-            progress_state["message"] = f"Pass 1: {i}/{total_tickers} scanned, {len(candidates)} candidates so far..."
+            progress_state["message"] = f"Pass 1: {i}/{total_tickers} scanned, {len(candidates)} found..."
 
         try:
             rows = conn.execute("""
-                SELECT date, close, high, low, volume
+                SELECT close, high, low, volume
                 FROM ohlcv WHERE ticker=? AND market='India'
                 ORDER BY date DESC LIMIT 260
             """, (ticker,)).fetchall()
 
-            if len(rows) < 60:
+            if len(rows) < 63:
                 continue
 
-            closes  = [r[1] for r in reversed(rows)]
-            highs   = [r[2] for r in reversed(rows)]
-            lows    = [r[3] for r in reversed(rows)]
-            vols    = [r[4] for r in reversed(rows)]
+            closes = [r[0] for r in reversed(rows)]
+            highs  = [r[1] for r in reversed(rows)]
+            lows   = [r[2] for r in reversed(rows)]
+            vols   = [r[3] for r in reversed(rows)]
+            price  = closes[-1]
 
-            price   = closes[-1]
-            if not price or price <= 0:
+            if not price or price <= 5:
                 continue
 
-            # MA checks
-            ma50  = sum(closes[-50:]) / 50 if len(closes) >= 50 else None
-            ma150 = sum(closes[-150:]) / 150 if len(closes) >= 150 else None
-            ma200 = sum(closes[-200:]) / 200 if len(closes) >= 200 else None
+            # ── STRICT pre-filter — only ~50-80 stocks should pass ────────────
 
-            # Stage 2 check: price > ma50 > ma150 > ma200
-            is_stage2 = False
-            if ma50 and ma150 and ma200:
-                is_stage2 = (price > ma50 > ma150 > ma200)
-
+            # 1. Stage 2: price > MA50 > MA150 > MA200 (strict — all 3 MAs)
+            if len(closes) < 200:
+                continue
+            ma50  = sum(closes[-50:]) / 50
+            ma150 = sum(closes[-150:]) / 150
+            ma200 = sum(closes[-200:]) / 200
+            is_stage2 = price > ma50 > ma150 > ma200
             if require_stage2 and not is_stage2:
                 continue
 
-            # Quick RS proxy (3M + 6M momentum vs simple benchmark)
-            roc_3m = ((closes[-1] / closes[-63]) - 1) * 100 if len(closes) >= 63 else 0
-            roc_6m = ((closes[-1] / closes[-126]) - 1) * 100 if len(closes) >= 126 else 0
+            # 2. RS proxy — strict: must beat min_rs threshold
+            roc_3m = ((closes[-1] / closes[-63]) - 1) * 100
+            roc_6m = ((closes[-1] / closes[-126]) - 1) * 100 if len(closes) >= 126 else roc_3m
             rs_proxy = round(roc_3m * 0.6 + roc_6m * 0.4)
-
-            if rs_proxy < (min_rs - 40):  # loose pre-filter
+            if rs_proxy < min_rs - 10:   # allow 10pt buffer for M2M3 vs proxy diff
                 continue
 
-            # Volume check — avg vol > 100K (liquidity)
-            avg_vol = sum(vols[-20:]) / 20 if len(vols) >= 20 else 0
-            if avg_vol < 10000:
-                continue
-
-            # pct from high
+            # 3. Price not more than 25% below 52W high (momentum filter)
             hi52 = max(highs[-252:]) if len(highs) >= 252 else max(highs)
             pct_from_high = round((price - hi52) / hi52 * 100, 1) if hi52 > 0 else -99
+            if pct_from_high < -30:
+                continue
+
+            # 4. Liquidity: avg daily volume × price > ₹2Cr turnover
+            avg_vol = sum(vols[-20:]) / 20 if len(vols) >= 20 else 0
+            if avg_vol * price < 2_000_000:
+                continue
+
+            # 5. MA200 rising (not declining): must be above 60-day ago value
+            if len(closes) >= 260:
+                ma200_60d_ago = sum(closes[-260:-60]) / 200
+                if ma200 < ma200_60d_ago * 0.98:   # declining MA200 → skip
+                    continue
 
             candidates.append({
-                "ticker":         ticker,
-                "price":          round(price, 2),
-                "is_stage2":      is_stage2,
-                "rs_proxy":       rs_proxy,
-                "pct_from_high":  pct_from_high,
-                "avg_vol":        int(avg_vol),
+                "ticker":        ticker,
+                "price":         round(price, 2),
+                "is_stage2":     is_stage2,
+                "rs_proxy":      rs_proxy,
+                "pct_from_high": pct_from_high,
+                "avg_vol":       int(avg_vol),
             })
 
         except Exception:
@@ -1201,15 +1207,16 @@ def run_smart_screener(
     if not candidates:
         return {
             "stocks": [], "total": 0,
-            "message": "No candidates passed pre-filter. Try lowering thresholds.",
+            "message": f"No candidates passed pre-filter (Stage2={require_stage2}, RS≥{min_rs}). Try lowering thresholds.",
             "elapsed": round(_time.time() - t0, 2),
         }
 
-    # Sort candidates by rs_proxy desc — best first
+    # Sort by rs_proxy descending — best first
     candidates.sort(key=lambda x: x["rs_proxy"], reverse=True)
 
-    # Cap at 120 candidates for Pass 2 (screener.in rate limits)
-    candidates = candidates[:120]
+    # Hard cap at 80 — keeps Pass 2 under 5 minutes
+    MAX_CANDIDATES = 80
+    candidates = candidates[:MAX_CANDIDATES]
 
     # ── Pass 2: Full SMART score on candidates ─────────────────────────────────
     if progress_state:
@@ -1222,70 +1229,79 @@ def run_smart_screener(
     results = []
     from market_cap import get_mcap_for_ticker, format_mcap
 
-    for i, cand in enumerate(candidates):
+    from concurrent.futures import ThreadPoolExecutor as _TPE, as_completed as _ac
+    import threading as _threading
+    _results_lock = _threading.Lock()
+
+    def _score_one(cand):
+        """Score a single candidate — runs in thread pool."""
         ticker = cand["ticker"]
-
-        if progress_state:
-            progress_state["progress"] = i + 1
-            progress_state["message"]  = (
-                f"Pass 2: Scoring {ticker} ({i+1}/{len(candidates)})..."
-            )
-
         try:
-            # Fundamentals from screener.in (cached 24h)
+            # Fundamentals from screener.in (cached 24h — no re-scrape if fresh)
             screener_data = fetch_screener_data(ticker)
-            om   = compute_om_score(screener_data)
-            tech = compute_technicals(ticker)
+            om    = compute_om_score(screener_data)
+            tech  = compute_technicals(ticker)
             smart = compute_smart_score(om, tech)
             score = smart["score"]
 
             if score < min_smart:
-                continue
+                return None
 
-            # mcap filter
             mcap_data = get_mcap_for_ticker(ticker) or {}
             mcap_cr   = mcap_data.get("mcap_cr", 0) or 0
             if min_mcap_cr > 0 and mcap_cr < min_mcap_cr:
-                continue
+                return None
 
-            results.append({
-                "ticker":         ticker,
-                "company":        screener_data.get("company_name", ticker),
-                "price":          cand["price"],
-                "smart_score":    score,
-                "verdict":        smart["verdict"],
-                "verdict_color":  smart["verdict_color"],
-                # Component scores
-                "fund_score":     smart["components"]["fund"]["score"],
-                "tech_score":     smart["components"]["tech"]["score"],
-                "rs_score":       smart["components"]["rs"]["score"],
-                "stage_score":    smart["components"]["stage"]["score"],
-                "tpr_score":      smart["components"]["tpr"]["score"],
-                # Technicals
-                "stage":          tech.get("stage", ""),
-                "stage_num":      tech.get("stage_num", 0),
-                "rs_rank":        tech.get("rs_rank", 0),
-                "ad_rating":      tech.get("ad_rating", "N/A"),
-                "tpr":            tech.get("tpr", 0),
-                "pct_from_high":  cand["pct_from_high"],
-                # OM Grade
-                "om_grade":       om.get("grade", "N/A"),
-                "om_pass_count":  om.get("pass_count", 0),
-                # mcap
-                "mcap_cr":        mcap_cr,
-                "mcap_tier":      mcap_data.get("mcap_tier", ""),
-                "mcap_fmt":       format_mcap(mcap_cr),
-                # Tags
-                "tags":           smart.get("tags", []),
-                "sector":         screener_data.get("sector", ""),
-            })
-
+            return {
+                "ticker":        ticker,
+                "company":       screener_data.get("company_name", ticker),
+                "price":         cand["price"],
+                "smart_score":   score,
+                "verdict":       smart["verdict"],
+                "verdict_color": smart["verdict_color"],
+                "fund_score":    smart["components"]["fund"]["score"],
+                "tech_score":    smart["components"]["tech"]["score"],
+                "rs_score":      smart["components"]["rs"]["score"],
+                "stage_score":   smart["components"]["stage"]["score"],
+                "tpr_score":     smart["components"]["tpr"]["score"],
+                "stage":         tech.get("stage", ""),
+                "stage_num":     tech.get("stage_num", 0),
+                "rs_rank":       tech.get("rs_rank", 0),
+                "ad_rating":     tech.get("ad_rating", "N/A"),
+                "tpr":           tech.get("tpr", 0),
+                "pct_from_high": cand["pct_from_high"],
+                "om_grade":      om.get("grade", "N/A"),
+                "om_pass_count": om.get("pass_count", 0),
+                "mcap_cr":       mcap_cr,
+                "mcap_tier":     mcap_data.get("mcap_tier", ""),
+                "mcap_fmt":      format_mcap(mcap_cr),
+                "tags":          smart.get("tags", []),
+                "sector":        screener_data.get("sector", ""),
+            }
         except Exception as e:
-            logger.debug(f"SMART score failed for {ticker}: {e}")
-            continue
+            logger.debug(f"SMART score failed {ticker}: {e}")
+            return None
 
-        # Polite delay between screener.in scrapes
-        _time.sleep(0.4)
+    # 3 parallel workers — polite to screener.in (cached hits are instant)
+    total_cands = len(candidates)
+    done_count  = [0]
+
+    with _TPE(max_workers=3) as pool:
+        futures = {pool.submit(_score_one, c): c for c in candidates}
+        for future in _ac(futures):
+            done_count[0] += 1
+            if progress_state:
+                ticker = futures[future]["ticker"]
+                progress_state["progress"] = total + done_count[0]
+                progress_state["total"]    = total + total_cands
+                progress_state["message"]  = (
+                    f"Pass 2: {done_count[0]}/{total_cands} scored"
+                    f" ({ticker}) — {len(results)} passed so far"
+                )
+            res = future.result()
+            if res:
+                with _results_lock:
+                    results.append(res)
 
     # Sort by smart score descending
     results.sort(key=lambda x: x["smart_score"], reverse=True)
