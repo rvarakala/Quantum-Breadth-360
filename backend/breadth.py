@@ -17,6 +17,18 @@ from utils import (
 
 logger = logging.getLogger(__name__)
 
+# ── Prevent concurrent breadth computations (same market) ────────────────────
+import threading
+_compute_locks: dict = {}
+_compute_locks_lock = threading.Lock()
+
+def _get_market_lock(market: str) -> threading.Lock:
+    with _compute_locks_lock:
+        if market not in _compute_locks:
+            _compute_locks[market] = threading.Lock()
+        return _compute_locks[market]
+
+
 
 def compute_breadth(stock_data, index_ticker):
     """
@@ -324,6 +336,26 @@ def _nh_nl_history(stock_data,days=252):
     return out
 
 def _compute_market(market: str, custom_tickers: dict = None) -> dict:
+    """Compute breadth for a market. Uses per-market lock to prevent concurrent runs."""
+    lock = _get_market_lock(market)
+    if not lock.acquire(blocking=False):
+        # Already computing this market — wait for it to finish then return cache
+        logger.info(f"=== {market} breadth already computing — waiting for lock ===")
+        lock.acquire(blocking=True)
+        lock.release()
+        # Return from cache
+        from cache import get_cache
+        cached = get_cache(f"breadth_{market}")
+        if cached:
+            logger.info(f"=== {market} returning cached result after lock wait ===")
+            return cached
+    try:
+        return _compute_market_impl(market, custom_tickers)
+    finally:
+        lock.release()
+
+
+def _compute_market_impl(market: str, custom_tickers: dict = None) -> dict:
     if custom_tickers is None:
         custom_tickers = {}
 
@@ -361,22 +393,26 @@ def _compute_market(market: str, custom_tickers: dict = None) -> dict:
     ip = ic = vv = n50 = n50c = 0.0
 
     def _dl(ticker, retries=2):
-        """Download with retry — yfinance can be flaky.
-        Falls back to httpx direct Yahoo Finance API if yfinance fails."""
+        """Download index/VIX ticker prices.
+        Uses Yahoo Finance v8 API directly — yfinance v1 is broken for Indian indices."""
         import time
-        # Try yfinance first
-        for attempt in range(retries + 1):
-            try:
-                df = safe_download(ticker, period="10d")
-                if df is not None and not df.empty and "Close" in df.columns:
-                    return df
-                logger.warning(f"Empty result for {ticker} (attempt {attempt+1})")
-            except Exception as e:
-                logger.warning(f"Download {ticker} attempt {attempt+1} failed: {e}")
-            if attempt < retries:
-                time.sleep(1)
+        # For index tickers (^CRSLDX, ^INDIAVIX, ^NSEI etc.)
+        # skip yfinance v1 entirely — go straight to v8 which works reliably
+        is_index = ticker.startswith("^")
+        if not is_index:
+            # Stock tickers: try yfinance first
+            for attempt in range(retries + 1):
+                try:
+                    df = safe_download(ticker, period="10d")
+                    if df is not None and not df.empty and "Close" in df.columns:
+                        return df
+                    logger.warning(f"Empty result for {ticker} (attempt {attempt+1})")
+                except Exception as e:
+                    logger.warning(f"Download {ticker} attempt {attempt+1} failed: {e}")
+                if attempt < retries:
+                    time.sleep(1)
 
-        # Fallback: direct Yahoo Finance v8 API via httpx
+        # Index tickers or stock fallback: direct Yahoo Finance v8 API via httpx
         try:
             import httpx
             url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
@@ -473,10 +509,19 @@ def _compute_market(market: str, custom_tickers: dict = None) -> dict:
     # Is data from today or yesterday?
     from datetime import date as _date
     _today = _date.today().isoformat()
-    _data_freshness = "today" if last_ohlcv_date == _today else (
-        "EOD" if last_ohlcv_date >= (_date.today().replace(
-            day=_date.today().day-1)).isoformat() else "stale"
-    )
+    # Check freshness — EOD = data from last 5 trading days (covers weekends)
+    try:
+        from datetime import timedelta as _td
+        _last_dt = _date.fromisoformat(last_ohlcv_date) if last_ohlcv_date != "unknown" else None
+        if _last_dt:
+            _days_old = (_date.today() - _last_dt).days
+            _data_freshness = "today" if _days_old == 0 else (
+                "EOD" if _days_old <= 5 else "stale"
+            )
+        else:
+            _data_freshness = "unknown"
+    except Exception:
+        _data_freshness = "unknown"
 
     return {**metrics,"market":market,"index_name":cfg["index_name"],"nifty50_price":round(n50,2),"nifty50_change_pct":round(n50c,2),
             "index_price":round(ip,2),"index_change_pct":round(ic,2),"vix":round(vv,2),

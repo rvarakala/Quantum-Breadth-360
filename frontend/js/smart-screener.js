@@ -210,8 +210,16 @@ async function runSmartScreener() {
     return;
   }
 
-  // Poll progress
+  // Poll progress (max 30 minutes timeout)
+  let _pollCount = 0;
   const poll = setInterval(async () => {
+    _pollCount++;
+    if (_pollCount > 900) {  // 900 × 2s = 30 minutes max
+      clearInterval(poll);
+      if (btn) { btn.disabled = false; btn.innerHTML = '<span>▶</span> Run Screener'; }
+      if (msg) msg.textContent = 'Timed out — try again';
+      return;
+    }
     try {
       const res = await fetch(`${API}/api/screener/smart/status`);
       const s   = await res.json();

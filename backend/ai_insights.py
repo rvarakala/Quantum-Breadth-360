@@ -20,8 +20,10 @@ logger = logging.getLogger(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────────
 GROQ_API_URL  = "https://api.groq.com/openai/v1/chat/completions"
-PRIMARY_MODEL = "qwen-qwq-32b"
-FALLBACK_MODEL= "llama-3.3-70b-versatile"
+# qwen-qwq-32b decommissioned — use llama as primary (confirmed working)
+# Update PRIMARY_MODEL when Groq releases new Qwen version
+PRIMARY_MODEL = "llama-3.3-70b-versatile"    # Fast, capable, confirmed on Groq free
+FALLBACK_MODEL = "llama3-70b-8192"            # Older fallback if above rate-limited
 
 DB_PATH = Path(__file__).parent / "breadth_data.db"
 
@@ -109,8 +111,7 @@ def _call_groq(prompt: str, system: str, api_key: str,
     data = resp.json()
     content = data["choices"][0]["message"]["content"]
 
-    # Qwen 3 reasoning model wraps answer in <think>...</think>
-    # Strip the thinking block, keep only the final answer
+    # Strip any thinking blocks (some models wrap output in <think>...</think>)
     if "<think>" in content:
         import re
         content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
