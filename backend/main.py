@@ -1196,6 +1196,74 @@ async def tv_fundamental_detail(ticker: str):
     )
     return result
 
+
+@app.post("/api/fundamentals/prefetch-quarterly")
+async def prefetch_quarterly_fundamentals(background_tasks: BackgroundTasks,
+                                           max_tickers: int = 200):
+    """
+    Pre-fetch and cache quarterly financial statements for top RS tickers.
+    Run this before SMART Screener for faster results.
+    Caches 24h in tv_fundamentals_detail table.
+    """
+    if _tv_fund_state["running"]:
+        return {"message": "A sync is already running"}
+
+    def _run():
+        _tv_fund_state["running"] = True
+        _tv_fund_state["message"] = "Prefetching quarterly data..."
+        try:
+            import sqlite3 as _sql
+            from tv_fundamentals import fetch_ticker_detail, _get_cached_detail
+
+            # Get top candidates by RS proxy (from OHLCV)
+            db = pathlib.Path(__file__).parent / "breadth_data.db"
+            conn = _sql.connect(str(db), timeout=15)
+            rows = conn.execute("""
+                SELECT ticker FROM (
+                    SELECT ticker,
+                           (MAX(close) - MIN(close)) / MIN(close) * 100 as momentum
+                    FROM ohlcv
+                    WHERE market='India'
+                    GROUP BY ticker
+                    HAVING COUNT(*) >= 60
+                    ORDER BY momentum DESC
+                    LIMIT ?
+                )
+            """, (max_tickers,)).fetchall()
+            conn.close()
+            tickers = [r[0] for r in rows]
+
+            total = len(tickers)
+            _tv_fund_state["total"] = total
+            fetched = 0
+            skipped = 0
+
+            for i, ticker in enumerate(tickers):
+                _tv_fund_state["progress"] = i + 1
+                _tv_fund_state["message"] = (
+                    f"Prefetch: {ticker} ({i+1}/{total})"
+                    f" — {fetched} fetched, {skipped} cached"
+                )
+                # Skip if already cached
+                if _get_cached_detail(ticker):
+                    skipped += 1
+                    continue
+                fetch_ticker_detail(ticker)  # fetches + caches
+                fetched += 1
+                import time as _t
+                _t.sleep(0.3)
+
+            _tv_fund_state["message"] = (
+                f"✅ Prefetch done: {fetched} fetched, {skipped} already cached"
+            )
+        except Exception as e:
+            _tv_fund_state["message"] = f"Prefetch error: {e}"
+        finally:
+            _tv_fund_state["running"] = False
+
+    background_tasks.add_task(_run)
+    return {"message": f"Prefetching quarterly data for top {max_tickers} tickers"}
+
 # ── Startup: load disk cache + pre-warm breadth in background ───────────────
 @app.on_event("startup")
 async def startup_event():

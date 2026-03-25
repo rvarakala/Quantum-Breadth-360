@@ -571,3 +571,46 @@ async function syncTvFundamentals() {
     } catch(e) {}
   }, 1500);
 }
+
+
+// ── Prefetch Quarterly Fundamentals ──────────────────────────────────────────
+async function prefetchQuarterly() {
+  const btn  = document.getElementById('prefetch-q-btn');
+  const msg  = document.getElementById('nse-sync-msg');
+  const bar  = document.getElementById('nse-sync-bar');
+  const prog = document.getElementById('nse-sync-status');
+
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Prefetching...'; }
+  if (prog) prog.style.display = 'block';
+  if (bar)  { bar.style.width = '0%'; bar.style.background = '#0891b2'; }
+  if (msg)  msg.textContent = 'Starting quarterly data prefetch...';
+
+  try {
+    await fetch(`${API}/api/fundamentals/prefetch-quarterly?max_tickers=200`,
+      { method: 'POST' });
+  } catch(e) {
+    if (msg) msg.textContent = 'Failed: ' + e.message;
+    if (btn) { btn.disabled = false; btn.textContent = '📊 Prefetch Quarterly Data'; }
+    return;
+  }
+
+  const poll = setInterval(async () => {
+    try {
+      const res = await fetch(`${API}/api/fundamentals/tv-sync/status`);
+      const s   = await res.json();
+      if (msg) msg.textContent = s.message || 'Running...';
+      if (s.total > 0 && bar) {
+        bar.style.width = Math.round((s.progress / s.total) * 100) + '%';
+      }
+      if (!s.running) {
+        clearInterval(poll);
+        if (bar)  { bar.style.width = '100%'; bar.style.background = '#22c55e'; }
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '✓ Quarterly Cached';
+          setTimeout(() => { btn.textContent = '📊 Prefetch Quarterly Data'; }, 4000);
+        }
+      }
+    } catch(e) {}
+  }, 2000);
+}

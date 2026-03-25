@@ -973,6 +973,7 @@
           <button onclick="startNseSync('3mo')" style="padding:10px 20px;background:var(--accent1);color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:var(--font-mono);font-size:13px;">Sync Stale (3M)</button>
           <button onclick="startNseSync('2y')" style="padding:10px 20px;background:var(--accent2);color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:var(--font-mono);font-size:13px;">Full 2Y Sync</button>
           <button onclick="startFundamentalsSync()" id="tv-fund-btn" style="padding:10px 20px;background:#7c3aed;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:var(--font-mono);font-size:13px;font-weight:700;" title="Fetch PE/ROE/EPS/Margins for all NSE stocks from TradingView — takes ~10 seconds">🧠 Sync Fundamentals (TV Batch)</button>
+          <button onclick="prefetchQuarterly()" id="prefetch-q-btn" style="padding:10px 20px;background:#0891b2;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:var(--font-mono);font-size:13px;" title="Pre-cache quarterly EPS/Revenue for top 200 stocks — needed for SMART Screener accuracy">📊 Prefetch Quarterly Data</button>
         </div>
       </div>
       <div id="nse-sync-status" style="margin-top:12px;font-family:var(--font-mono);font-size:13px;color:var(--text2);display:none;">

@@ -1238,19 +1238,22 @@ def run_smart_screener(
     _results_lock = _threading.Lock()
 
     def _score_one(cand):
-        """Score a single candidate — pure DB reads, no network calls."""
+        """Score a single candidate.
+        Fundamentals: yfinance quarterly statements (cached 24h in tv_fundamentals_detail)
+        Technicals:   local DB computation (no network)
+        """
         ticker = cand["ticker"]
         try:
-            # Use TV batch fast lookup — instant, no network calls
-            # Falls back to cached yfinance detail if TV batch missing
+            # ── Fundamentals: yfinance quarterly (cached 24h) ─────────────────
+            # fetch_ticker_detail uses: cache → yfinance quarterly_income_stmt
+            #   → TV batch fallback (ratios only if yfinance fails)
+            # Screener.in is NOT in this chain anymore
             try:
-                from tv_fundamentals import get_screener_data_fast, fetch_ticker_detail
-                screener_data = get_screener_data_fast(ticker)
-                # If TV batch has no data for this ticker, try cached detail
-                if "error" in screener_data:
-                    screener_data = fetch_ticker_detail(ticker)
+                from tv_fundamentals import fetch_ticker_detail
+                screener_data = fetch_ticker_detail(ticker)
             except ImportError:
-                screener_data = fetch_screener_data(ticker)   # legacy fallback
+                # Should never happen — tv_fundamentals.py is always present
+                screener_data = {"error": "tv_fundamentals not available", "ticker": ticker}
             om    = compute_om_score(screener_data)
             tech  = compute_technicals(ticker)
             smart = compute_smart_score(om, tech)
@@ -1307,8 +1310,9 @@ def run_smart_screener(
                 progress_state["progress"] = total + done_count[0]
                 progress_state["total"]    = total + total_cands
                 progress_state["message"]  = (
-                    f"Pass 2: {done_count[0]}/{total_cands} scored"
-                    f" ({ticker}) — {len(results)} passed so far"
+                    f"Pass 2: Scoring {ticker} ({done_count[0]}/{total_cands})"
+                    f" — {len(results)} passed SMART≥{min_smart} so far"
+                    f" [yfinance quarterly + local DB]"
                 )
             res = future.result()
             if res:

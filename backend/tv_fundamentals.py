@@ -405,7 +405,7 @@ def fetch_ticker_detail(ticker: str) -> dict:
 def _fetch_yf_statements(ticker: str) -> dict:
     """
     Fetch quarterly + annual income statements via yfinance.
-    Also pulls ratios from TV batch or TV scraper overview.
+    Uses threading timeout to prevent hanging in thread pools.
     """
     try:
         import yfinance as yf
@@ -415,12 +415,26 @@ def _fetch_yf_statements(ticker: str) -> dict:
     try:
         t = yf.Ticker(f"{ticker}.NS")
 
-        # Quarterly income statement
+        # Quarterly income statement — with timeout protection
         quarterly = []
         try:
-            q_df = t.quarterly_income_stmt
-            if q_df is not None and not q_df.empty:
-                quarterly = _yf_quarterly_to_list(q_df)
+            import threading, queue
+
+            def _fetch_q(q):
+                try:
+                    q.put(t.quarterly_income_stmt)
+                except Exception as e:
+                    q.put(e)
+
+            q = queue.Queue()
+            th = threading.Thread(target=_fetch_q, args=(q,), daemon=True)
+            th.start()
+            th.join(timeout=15)  # 15 second timeout per ticker
+
+            if not q.empty():
+                result = q.get_nowait()
+                if not isinstance(result, Exception) and result is not None and not result.empty:
+                    quarterly = _yf_quarterly_to_list(result)
         except Exception as e:
             logger.debug(f"yfinance quarterly failed {ticker}: {e}")
 
