@@ -800,41 +800,53 @@ def run_smart_screener(
     if not tickers_with_data:
         return {"error": "No OHLCV data found — run a sync first", "stocks": [], "total": 0}
 
-    # ── Pass 1: Pre-filter using vectorised SQL + numpy — no Python loops ───────
+    # ── Pass 1: Pre-filter using smart batch SQL + numpy ─────────────────────────
     if progress_state:
-        progress_state["message"] = "Pass 1: Scanning universe (vectorised)..."
+        progress_state["message"] = "Pass 1: Loading market data..."
         progress_state["progress"] = 0
         progress_state["total"]    = 10
 
     import numpy as _np
 
-    conn = sqlite3.connect(str(DB_PATH), timeout=30)
+    # Get the last 260 calendar dates in the DB (avoid window function on full table)
+    conn = sqlite3.connect(str(DB_PATH), timeout=60)
 
-    # Load all OHLCV data for all tickers in ONE SQL call
-    # Only last 260 rows per ticker — enough for all MA calculations
     if progress_state:
-        progress_state["message"] = "Pass 1: Loading OHLCV data..."
+        progress_state["message"] = "Pass 1: Fetching OHLCV data..."
 
-    df_raw = conn.execute("""
-        SELECT ticker, date, close, high, low, volume
-        FROM (
-            SELECT ticker, date, close, high, low, volume,
-                   ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY date DESC) as rn
-            FROM ohlcv WHERE market = 'India'
-        )
-        WHERE rn <= 260
-        ORDER BY ticker, date ASC
+    # Efficient: get last 260 distinct dates first, then join
+    # This avoids ROW_NUMBER() window function which is slow on 248K rows
+    cutoff_rows = conn.execute("""
+        SELECT DISTINCT date FROM ohlcv
+        WHERE market = 'India'
+        ORDER BY date DESC LIMIT 260
     """).fetchall()
+    
+    if not cutoff_rows:
+        conn.close()
+        return {"error": "No OHLCV data — run EOD Sync first", "stocks": [], "total": 0}
+    
+    cutoff_date = cutoff_rows[-1][0]   # oldest of the last 260 dates
+    
+    # Load all rows from last 260 dates in one query (uses date index if present)
+    logger.info(f"SMART Screener Pass 1: loading OHLCV from {cutoff_date} onwards...")
+    df_raw = conn.execute("""
+        SELECT ticker, close, high, low, volume
+        FROM ohlcv
+        WHERE market = 'India' AND date >= ?
+        ORDER BY ticker ASC, date ASC
+    """, (cutoff_date,)).fetchall()
     conn.close()
+    logger.info(f"SMART Screener Pass 1: loaded {len(df_raw):,} rows")
 
     if progress_state:
-        progress_state["message"] = "Pass 1: Computing filters..."
+        progress_state["message"] = f"Pass 1: Scanning {len(set(r[0] for r in df_raw))} tickers..."
         progress_state["progress"] = 5
 
-    # Group by ticker using dict
+    # Group by ticker
     from collections import defaultdict
     ticker_rows = defaultdict(list)
-    for ticker, date, close, high, low, volume in df_raw:
+    for ticker, close, high, low, volume in df_raw:
         ticker_rows[ticker].append((close, high, low, volume))
 
     candidates = []
@@ -902,6 +914,8 @@ def run_smart_screener(
         progress_state["progress"] = 10
         progress_state["message"]  = f"Pass 1: {len(candidates)} candidates from {total_tickers} tickers"
 
+    logger.info(f"SMART Screener Pass 1 complete: {len(candidates)} candidates from {total_tickers} tickers")
+
     if not candidates:
         return {
             "stocks": [], "total": 0,
@@ -912,9 +926,10 @@ def run_smart_screener(
     # Sort by rs_proxy descending — best first
     candidates.sort(key=lambda x: x["rs_proxy"], reverse=True)
 
-    # Hard cap at 80 — keeps Pass 2 under 5 minutes
+    # Hard cap at 80 — keeps Pass 2 fast
     MAX_CANDIDATES = 80
     candidates = candidates[:MAX_CANDIDATES]
+    logger.info(f"SMART Screener Pass 2: scoring {len(candidates)} candidates...")
 
     # ── Pass 2: Full SMART score on candidates ─────────────────────────────────
     if progress_state:
@@ -1038,6 +1053,7 @@ def run_smart_screener(
             "ts":   _time.time(),
         }
 
+    logger.info(f"SMART Screener complete: {len(results)} results in {elapsed}s")
     if progress_state:
         progress_state["message"]  = result["message"]
         progress_state["running"]  = False
