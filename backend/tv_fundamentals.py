@@ -518,3 +518,64 @@ def _build_from_batch(ticker: str, batch: dict) -> dict:
         "ratios":       ratios,
         "source":       "tv_batch_fallback",
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FAST SCREENER DATA — Build from TV batch only (no network calls)
+# Used by SMART Screener Pass 2 — instant, no yfinance/scraper calls
+# ══════════════════════════════════════════════════════════════════════════════
+
+def get_screener_data_fast(ticker: str) -> dict:
+    """
+    Build screener-compatible fundamental dict purely from TV batch DB.
+    No network calls — instant. Used by SMART Screener Pass 2.
+
+    Returns same format as fetch_ticker_detail() but with limited quarterly data.
+    compute_om_score gracefully handles missing quarters by skipping those criteria.
+    """
+    batch = get_batch_fundamental(ticker)
+
+    if not batch:
+        return {"error": f"No TV batch data for {ticker}", "ticker": ticker}
+
+    # Build ratios from batch
+    ratios = {
+        "roe":              batch.get("roe"),
+        "debt_to_equity":   batch.get("debt_to_equity"),
+        "pe_ratio":         batch.get("pe_ratio"),
+        "current_ratio":    batch.get("current_ratio"),
+        "operating_margin": batch.get("operating_margin"),
+        "net_margin":       batch.get("net_margin"),
+        "gross_margin":     batch.get("gross_margin"),
+    }
+
+    # Build minimal quarterly from available TTM data
+    # Single point is enough for: EPS positive, Margin checks
+    eps_ttm      = batch.get("eps_ttm")
+    revenue_ttm  = batch.get("revenue_ttm")
+    op_margin    = batch.get("operating_margin")
+    net_margin   = batch.get("net_margin")
+
+    net_profit = None
+    if revenue_ttm and net_margin is not None:
+        net_profit = revenue_ttm * net_margin / 100
+
+    quarterly = []
+    if eps_ttm is not None or revenue_ttm is not None:
+        quarterly = [{
+            "period":     "TTM",
+            "eps":        eps_ttm,
+            "sales":      revenue_ttm,
+            "net_profit": net_profit,
+            "opm":        op_margin,
+            "npm":        net_margin,
+        }]
+
+    return {
+        "ticker":       ticker,
+        "company_name": batch.get("company_name", ticker),
+        "quarterly":    quarterly,
+        "annual":       [],
+        "ratios":       ratios,
+        "source":       "tv_batch_fast",
+    }

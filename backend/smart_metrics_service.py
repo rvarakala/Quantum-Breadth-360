@@ -1238,13 +1238,17 @@ def run_smart_screener(
     _results_lock = _threading.Lock()
 
     def _score_one(cand):
-        """Score a single candidate — runs in thread pool."""
+        """Score a single candidate — pure DB reads, no network calls."""
         ticker = cand["ticker"]
         try:
-            # Fundamentals from TradingView (cached 24h)
+            # Use TV batch fast lookup — instant, no network calls
+            # Falls back to cached yfinance detail if TV batch missing
             try:
-                from tv_fundamentals import fetch_ticker_detail
-                screener_data = fetch_ticker_detail(ticker)
+                from tv_fundamentals import get_screener_data_fast, fetch_ticker_detail
+                screener_data = get_screener_data_fast(ticker)
+                # If TV batch has no data for this ticker, try cached detail
+                if "error" in screener_data:
+                    screener_data = fetch_ticker_detail(ticker)
             except ImportError:
                 screener_data = fetch_screener_data(ticker)   # legacy fallback
             om    = compute_om_score(screener_data)
