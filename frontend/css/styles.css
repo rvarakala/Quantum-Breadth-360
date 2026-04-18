@@ -431,7 +431,7 @@ body::before {
 }
 
 /* ─── SCORE HERO ───────────────────────────────────────────────────────────── */
-.hero-row { display: grid; grid-template-columns: 320px 1fr 280px; gap: 16px; margin-bottom: 14px; flex-shrink: 0; }
+.hero-row { display: grid; grid-template-columns: 320px 1fr 280px; gap: 16px; margin-bottom: 20px; }
 
 .score-card {
   background: var(--card-bg);
@@ -715,15 +715,6 @@ body::before {
 .tab-btn.active { color: var(--tab-active-text); border-bottom-color: var(--tab-active-text); background: var(--tab-active-bg); }
 .tab-content { display: none; }
 .tab-content.active { display: block; }
-
-/* Overview tab fills full available viewport height */
-#tab-overview.active {
-  display: flex;
-  flex-direction: column;
-  height: calc(100vh - 110px);
-  min-height: 0;
-  overflow: hidden;
-}
 
 /* ─── ANIMATIONS ───────────────────────────────────────────────────────────── */
 @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
@@ -2126,8 +2117,7 @@ body::before {
 
 .ls-alerts-row {
   display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
-  padding: 0 0 14px;
-  flex-shrink: 0;
+  padding: 0 16px 16px;
 }
 @media (max-width: 768px) { .ls-alerts-row { grid-template-columns: 1fr; } }
 
@@ -2408,14 +2398,9 @@ body::before {
 /* ─── AI INSIGHTS ──────────────────────────────────────────────────────────── */
 .ai-card {
   background:var(--bg1);border:1px solid var(--border);
-  border-radius:10px;padding:16px 18px;margin-top:0;
+  border-radius:10px;padding:16px 18px;margin-top:16px;
   position:relative;overflow:hidden;
-  flex: 1; min-height: 0; display: flex; flex-direction: column;
 }
-#ai-market-body { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
-#ai-market-body::-webkit-scrollbar { width: 4px; }
-#ai-market-body::-webkit-scrollbar-track { background: transparent; }
-#ai-market-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
 .ai-card::before {
   content:'';position:absolute;top:0;left:0;right:0;height:2px;
   background:linear-gradient(90deg,#7c3aed,#2563eb,#0891b2);
